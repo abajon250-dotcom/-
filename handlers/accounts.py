@@ -3,7 +3,7 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import add_account
+from database import add_account, is_user_blocked
 from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
@@ -21,6 +21,9 @@ class AddAccountState(StatesGroup):
 # ----- Обработчики текстовых кнопок (из reply-меню) -----
 @router.message(F.text == "✈️ Telegram")
 async def telegram_account_start(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     await state.update_data(platform="telegram")
     await message.answer(
         "Введи номер телефона в международном формате (например, +79001234567):",
@@ -30,6 +33,9 @@ async def telegram_account_start(message: types.Message, state: FSMContext):
 
 @router.message(F.text == "📘 VK")
 async def vk_account_start(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     await state.update_data(platform="vk")
     await message.answer(
         "Введи номер телефона в международном формате (например, +79001234567):",
@@ -39,6 +45,9 @@ async def vk_account_start(message: types.Message, state: FSMContext):
 
 @router.message(F.text == "📱 MAX")
 async def max_account_start(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     await state.update_data(platform="max")
     await message.answer(
         "Введи номер телефона для MAX (например, +79001234567):",
@@ -46,9 +55,19 @@ async def max_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
+# ----- Обработчик для кнопки "Назад в меню" -----
+@router.message(F.text == "◀️ Назад в меню")
+async def back_to_main_menu(message: types.Message):
+    from handlers.start import cmd_start
+    await cmd_start(message)
+
 # ----- (Опционально) Обработчики инлайн-кнопок на случай, если они где-то используются -----
 @router.callback_query(F.data == "platform_telegram")
 async def telegram_chosen(callback: types.CallbackQuery, state: FSMContext):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await state.update_data(platform="telegram")
     await callback.message.edit_text(
         "Введи номер телефона в международном формате (например, +79001234567):",
@@ -58,6 +77,10 @@ async def telegram_chosen(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "platform_vk")
 async def vk_chosen(callback: types.CallbackQuery, state: FSMContext):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await state.update_data(platform="vk")
     await callback.message.edit_text(
         "Введи номер телефона в международном формате (например, +79001234567):",
@@ -67,6 +90,10 @@ async def vk_chosen(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "platform_max")
 async def max_chosen(callback: types.CallbackQuery, state: FSMContext):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await state.update_data(platform="max")
     await callback.message.edit_text(
         "Введи номер телефона для MAX (например, +79001234567):",
@@ -77,6 +104,9 @@ async def max_chosen(callback: types.CallbackQuery, state: FSMContext):
 # ----- Общий обработчик ввода номера -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     phone = message.text.strip()
     if not re.match(r'^\+\d{10,15}$', phone):
         await message.answer(
@@ -122,6 +152,10 @@ async def phone_entered(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "back_to_phone", AddAccountState.waiting_for_code)
 async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await state.set_state(AddAccountState.phone)
     await callback.message.edit_text(
         "Введи номер телефона заново:",
@@ -130,6 +164,9 @@ async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
 
 @router.message(AddAccountState.waiting_for_code)
 async def code_entered(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     code = message.text.strip()
     data = await state.get_data()
     auth = data["auth_instance"]
@@ -156,6 +193,9 @@ async def code_entered(message: types.Message, state: FSMContext):
 
 @router.message(AddAccountState.waiting_for_2fa)
 async def twofa_entered(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     twofa = message.text.strip()
     data = await state.get_data()
     auth = data["auth_instance"]

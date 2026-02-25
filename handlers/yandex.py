@@ -34,6 +34,7 @@ def git_push(repo_path, commit_message):
     except subprocess.CalledProcessError as e:
         return False, str(e)
 
+
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()

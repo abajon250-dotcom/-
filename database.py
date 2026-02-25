@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import aiosqlite
+from datetime import datetime
 
 DB_NAME = "spam_bot.db"
 
@@ -13,7 +14,6 @@ async def init_db():
              credentials TEXT NOT NULL,
              status TEXT DEFAULT 'active',
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица шаблонов
         await db.execute('''CREATE TABLE IF NOT EXISTS templates
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -22,7 +22,6 @@ async def init_db():
              text TEXT,
              media_path TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица кампаний
         await db.execute('''CREATE TABLE IF NOT EXISTS campaigns
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +36,6 @@ async def init_db():
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
              started_at TIMESTAMP,
              completed_at TIMESTAMP)''')
-
         # Таблица лендингов
         await db.execute('''CREATE TABLE IF NOT EXISTS landings
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,7 +43,6 @@ async def init_db():
              template_name TEXT,
              html_path TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица подписок
         await db.execute('''CREATE TABLE IF NOT EXISTS subscriptions
             (user_id INTEGER PRIMARY KEY,
@@ -53,7 +50,6 @@ async def init_db():
              expires_at TIMESTAMP,
              payment_method TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица инвойсов
         await db.execute('''CREATE TABLE IF NOT EXISTS invoices
             (invoice_id TEXT PRIMARY KEY,
@@ -62,7 +58,6 @@ async def init_db():
              method TEXT NOT NULL,
              status TEXT DEFAULT 'pending',
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица пользователей
         await db.execute('''CREATE TABLE IF NOT EXISTS users
             (user_id INTEGER PRIMARY KEY,
@@ -70,8 +65,8 @@ async def init_db():
              first_name TEXT,
              last_name TEXT,
              balance REAL DEFAULT 0,
+             is_blocked INTEGER DEFAULT 0,
              registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
         # Таблица транзакций
         await db.execute('''CREATE TABLE IF NOT EXISTS transactions
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,6 +75,16 @@ async def init_db():
              type TEXT,
              description TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
+        # Проверка и добавление недостающих колонок в таблицу users
+        cursor = await db.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if 'is_blocked' not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN is_blocked INTEGER DEFAULT 0")
+        if 'registered_at' not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        if 'balance' not in columns:
+            await db.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
 
         await db.commit()
 
@@ -157,6 +162,24 @@ async def get_campaigns():
         rows = await cursor.fetchall()
         return [{"id": r[0], "user_id": r[1], "platform": r[2], "status": r[3], "created_at": r[4]} for r in rows]
 
+async def get_campaigns_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM campaigns")
+        row = await cursor.fetchone()
+        return row[0] or 0
+
+async def get_landings_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM landings")
+        row = await cursor.fetchone()
+        return row[0] or 0
+
+async def get_templates_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM templates")
+        row = await cursor.fetchone()
+        return row[0] or 0
+
 # ---------- Подписки ----------
 async def get_subscription(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -173,6 +196,33 @@ async def set_subscription(user_id: int, status: str, expires_at: str = None, pa
             (user_id, status, expires_at, payment_method)
         )
         await db.commit()
+
+async def get_active_subscriptions_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM subscriptions WHERE status='active' AND expires_at > ?",
+            (datetime.now().isoformat(),)
+        )
+        row = await cursor.fetchone()
+        return row[0] or 0
+
+async def get_expired_subscriptions_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM subscriptions WHERE status='active' AND expires_at <= ?",
+            (datetime.now().isoformat(),)
+        )
+        row = await cursor.fetchone()
+        return row[0] or 0
+
+async def get_active_subscriptions_list() -> list:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT user_id, expires_at FROM subscriptions WHERE status='active' AND expires_at > ?",
+            (datetime.now().isoformat(),)
+        )
+        rows = await cursor.fetchall()
+        return [{"user_id": row[0], "expires_at": row[1]} for row in rows]
 
 # ---------- Инвойсы ----------
 async def add_invoice(invoice_id: str, user_id: int, amount: int, method: str):
@@ -199,19 +249,38 @@ async def update_invoice_status(invoice_id: str, status: str):
 # ---------- Пользователи и баланс ----------
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+        # Получаем список колонок таблицы users
+        cursor = await db.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if not columns:
+            return None
+        cols_str = ", ".join(columns)
+        cursor = await db.execute(f"SELECT {cols_str} FROM users WHERE user_id=?", (user_id,))
         row = await cursor.fetchone()
         if row:
-            return {"user_id": row[0], "username": row[1], "first_name": row[2], "last_name": row[3], "balance": row[4], "registered_at": row[5]}
+            return dict(zip(columns, row))
         return None
 
 async def add_user(user_id: int, username: str, first_name: str, last_name: str):
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO users (user_id, username, first_name, last_name) VALUES (?, ?, ?, ?)",
-            (user_id, username, first_name, last_name)
-        )
-        await db.commit()
+        # Динамическое добавление, чтобы не зависеть от структуры
+        cursor = await db.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        cols = []
+        values = []
+        placeholders = []
+        if 'user_id' in columns:
+            cols.append('user_id'); values.append(user_id); placeholders.append('?')
+        if 'username' in columns:
+            cols.append('username'); values.append(username); placeholders.append('?')
+        if 'first_name' in columns:
+            cols.append('first_name'); values.append(first_name); placeholders.append('?')
+        if 'last_name' in columns:
+            cols.append('last_name'); values.append(last_name); placeholders.append('?')
+        if cols:
+            query = f"INSERT OR IGNORE INTO users ({', '.join(cols)}) VALUES ({', '.join(placeholders)})"
+            await db.execute(query, values)
+            await db.commit()
 
 async def get_balance(user_id: int) -> float:
     async with aiosqlite.connect(DB_NAME) as db:
@@ -220,8 +289,7 @@ async def get_balance(user_id: int) -> float:
         if row:
             return row[0]
         else:
-            await db.execute("INSERT INTO users (user_id, balance) VALUES (?, 0)", (user_id,))
-            await db.commit()
+            await add_user(user_id, "", "", "")
             return 0.0
 
 async def update_balance(user_id: int, amount: float):
@@ -237,3 +305,54 @@ async def add_transaction(user_id: int, amount: float, type: str, description: s
         )
         await db.commit()
         await update_balance(user_id, amount)
+
+# ---------- Блокировка ----------
+async def is_user_blocked(user_id: int) -> bool:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT is_blocked FROM users WHERE user_id=?", (user_id,))
+        row = await cursor.fetchone()
+        if row:
+            return row[0] == 1
+        return False
+
+async def block_user(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE users SET is_blocked=1 WHERE user_id=?", (user_id,))
+        await db.commit()
+
+async def unblock_user(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("UPDATE users SET is_blocked=0 WHERE user_id=?", (user_id,))
+        await db.commit()
+
+# ---------- Статистика пользователей ----------
+async def get_users_count() -> int:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        row = await cursor.fetchone()
+        return row[0] or 0
+
+async def get_inactive_users_count() -> int:
+    total = await get_users_count()
+    active = await get_active_subscriptions_count()
+    return total - active
+
+async def get_replenishments_stats() -> dict:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*), SUM(amount) FROM transactions WHERE type='replenish'"
+        )
+        row = await cursor.fetchone()
+        count = row[0] or 0
+        total = row[1] or 0.0
+        return {"count": count, "total": total}
+
+async def get_subscription_purchases_stats() -> dict:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*), SUM(amount) FROM transactions WHERE type='subscription_purchase'"
+        )
+        row = await cursor.fetchone()
+        count = row[0] or 0
+        total = row[1] or 0.0
+        return {"count": count, "total": total}

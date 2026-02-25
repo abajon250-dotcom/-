@@ -24,8 +24,8 @@ ADB_PATH = os.getenv("ADB_PATH", "adb")
 MAX_PACKAGE = os.getenv("MAX_PACKAGE")
 MAX_ACTIVITY = os.getenv("MAX_ACTIVITY")
 
-TG_API_ID = int(os.getenv("TG_API_ID", 0))
-TG_API_HASH = os.getenv("TG_API_HASH", "")
+TG_API_ID = int(os.getenv("31850500", 0))
+TG_API_HASH = os.getenv("d66cae3023621ecb7851ed9a22654fc6", "")
 
-CRYPTO_PAY_TOKEN = os.getenv("CRYPTO_PAY_TOKEN")
+CRYPTO_PAY_TOKEN = os.getenv("537960:AA8aACNk9gR2qZR3LGNrHi2AjM62ZFWjshV")
 XROCKET_API_KEY = os.getenv("XROCKET_API_KEY")
