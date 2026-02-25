@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Госавтоинспекция: Официальный портал</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Arial', 'Helvetica', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; width: 100%; background: white; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #003c8f; color: white; padding: 20px 25px; border-bottom: 3px solid #ffd600; }
+        .header h1 { font-size: 22px; font-weight: 500; letter-spacing: 0.5px; }
+        .content { padding: 30px 25px; }
+        .info-block { background: #f8faff; border-left: 4px solid #003c8f; padding: 15px 20px; margin-bottom: 25px; border-radius: 0 8px 8px 0; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { font-weight: 600; color: #2c3e50; }
+        .info-value { color: #0b3b5c; font-weight: 500; }
+        .video-preview { position: relative; width: 100%; height: 300px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 25px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .video-preview img { width: 100%; height: 100%; object-fit: cover; filter: blur(6px); opacity: 0.7; }
+        .video-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,60,143,0.9); color: white; border: none; width: 70px; height: 70px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
+        .video-play::after { content: "▶"; }
+        .btn-official { display: inline-block; background: #003c8f; color: white; font-weight: 600; font-size: 18px; padding: 16px 40px; border-radius: 50px; text-decoration: none; width: 100%; text-align: center; border: none; cursor: pointer; transition: background 0.2s; box-shadow: 0 8px 20px rgba(0,60,143,0.3); }
+        .btn-official:hover { background: #002a6e; }
+        .footer { background: #f5f5f5; padding: 15px 25px; font-size: 13px; color: #666; display: flex; justify-content: space-between; border-top: 1px solid #ddd; }
+        .footer a { color: #003c8f; text-decoration: none; }
+        .badge { background: #ffd600; color: #003c8f; padding: 3px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚔 Госавтоинспекция: <span>Официальный портал</span></h1>
+        </div>
+        <div class="content">
+            <div class="info-block">
+                <h2 style="margin-bottom: 15px; font-size: 20px; color: #003c8f;">Материалы дела</h2>
+                <div class="info-row"><span class="info-label">Протокол:</span><span class="info-value">№4829-Б</span></div>
+                <div class="info-row"><span class="info-label">Доступ к видеозаписи:</span><span class="info-value">ГЛОНАСС/GPS (ограничен)</span></div>
+                <div class="info-row"><span class="info-label">Дата события:</span><span class="info-value">Сегодня</span></div>
+                <div class="info-row"><span class="info-label">Статус:</span><span class="info-value"><span class="badge">Проверено ГИБДД</span></span></div>
+                <div class="info-row"><span class="info-label">Формат:</span><span class="info-value">Full HD (MP4)</span></div>
+            </div>
+            <div class="video-preview">
+                <img src="https://source.unsplash.com/featured/?accident,police" alt="Превью видео" onerror="this.src='https://source.unsplash.com/featured/?accident,car';">
+                <div class="video-play"></div>
+            </div>
+            <a href="привет" class="btn-official">привет</a>
+        </div>
+        <div class="footer">
+            <span>© ГУ МВД России по г. Москве</span>
+            <a href="#">Политика обработки данных</a>
+        </div>
+    </div>
+</body>
+</html>
