@@ -1,0 +1,5 @@
+spam_bot.db 
+user_actions.log 
+__pycache__/ 
+.env 
+.idea/ 
