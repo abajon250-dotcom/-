@@ -1,6 +1,9 @@
 meta:
   name: mybot
   version: 1.0.0
+  toolchain:
+    name: python
+    version: 3.11
 
 services:
   - name: bot
