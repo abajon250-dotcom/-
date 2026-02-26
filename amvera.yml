@@ -7,9 +7,7 @@ meta:
 
 services:
   - name: bot
-    type: python
     script: main.py
-    requirements: requirements.txt
     environment:
       BOT_TOKEN: "8799526794:AAHG5sLLOHsnjf5mK5yiurfQ0npsvWinzVQ"
       ADMIN_IDS: "6484109563"
@@ -20,3 +18,4 @@ services:
       LANDING_STORAGE_PATH: "/data/landings"
     persistence:
       - /data
+    requirements: requirements.txt
