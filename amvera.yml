@@ -1,6 +1,9 @@
-version: 1
+meta:
+  name: mybot
+  version: 1.0.0
+
 services:
-  - name: mybot
+  - name: bot
     type: python
     script: main.py
     requirements: requirements.txt
