@@ -3,7 +3,7 @@ meta:
   version: 1.0.0
   toolchain:
     name: python
-    version: 3.14
+    version: 3.11
   environment:
     BOT_TOKEN: "8799526794:AAHG5sLLOHsnjf5mK5yiurfQ0npsvWinzVQ"
     ADMIN_IDS: "6484109563"
