@@ -1,17 +1,14 @@
-import re
 import os
 import subprocess
-from datetime import datetime
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from services.landing import generate_landing
-from config import YANDEX_OAUTH_TOKEN, YANDEX_CLIENT_ID, YANDEX_LOGIN, LANDING_STORAGE_PATH, LANDING_BASE_URL
+from config import LANDING_STORAGE_PATH, LANDING_BASE_URL
 from logger import log_action
 from handlers.common import get_nav_keyboard
-from database import get_subscription
-from config import ADMIN_IDS
+from database import is_user_blocked
 
 router = Router()
 
@@ -24,19 +21,29 @@ class YandexState(StatesGroup):
     offer_link = State()
     photo = State()
 
+# ================== Функция для авто‑пуша на GitHub ==================
 def git_push(repo_path, commit_message):
+    """
+    Выполняет git add landings, commit и push.
+    repo_path – корень репозитория (где лежит .git).
+    """
     try:
         os.chdir(repo_path)
-        subprocess.run(["git", "add", "."], check=True)
+        # Добавляем только папку landings, чтобы не трогать остальные файлы
+        subprocess.run(["git", "add", "landings"], check=True)
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        subprocess.run(["git", "push"], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
         return True, "Успешно запушено"
     except subprocess.CalledProcessError as e:
         return False, str(e)
 
-
+# ================== Главное меню Яндекс ==================
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu(callback: types.CallbackQuery):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     builder = InlineKeyboardBuilder()
     builder.button(text="🌐 Создать лендинг", callback_data="yandex_create_landing")
     builder.button(text="◀️ Назад", callback_data="main_menu")
@@ -45,7 +52,9 @@ async def yandex_menu(callback: types.CallbackQuery):
         "🌐 Яндекс.Реклама:",
         reply_markup=builder.as_markup()
     )
+    await callback.answer()
 
+# ================== СОЗДАНИЕ ЛЕНДИНГА ==================
 @router.callback_query(F.data == "yandex_create_landing")
 async def create_landing_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
@@ -85,6 +94,7 @@ async def landing_template(callback: types.CallbackQuery, state: FSMContext):
     template = callback.data.replace("tpl_", "")
     await state.update_data(template=template)
 
+    # Картинка по умолчанию (если пользователь не отправит свою)
     if template == "gibdd":
         default_image = "https://source.unsplash.com/featured/?accident,police"
     elif template == "accident":
@@ -163,12 +173,14 @@ async def landing_offer(message: types.Message, state: FSMContext):
         return
     await state.update_data(offer_link=link)
 
+    # Запрашиваем фото
     await message.answer(
         "📸 Теперь отправь фотографию для лендинга (или напиши «пропустить» для фото по умолчанию):",
         reply_markup=get_nav_keyboard(show_cancel=True)
     )
     await state.set_state(YandexState.photo)
 
+# ----- Обработка фото -----
 @router.message(YandexState.photo, F.photo)
 async def landing_photo(message: types.Message, state: FSMContext, bot: Bot):
     photo = message.photo[-1]
@@ -192,6 +204,7 @@ async def skip_photo(message: types.Message, state: FSMContext):
 async def invalid_photo(message: types.Message):
     await message.answer("Пожалуйста, отправь фотографию или напиши «пропустить».")
 
+# ----- Финальная генерация лендинга -----
 async def finalize_landing(message: types.Message, state: FSMContext):
     data = await state.get_data()
     landing_name = data["landing_name"]
@@ -223,7 +236,8 @@ async def finalize_landing(message: types.Message, state: FSMContext):
         )
         log_action(message.from_user.id, "create_landing", landing_name)
 
-        repo_path = LANDING_STORAGE_PATH
+        # ===== АВТОМАТИЧЕСКИЙ ПУШ НА GITHUB =====
+        repo_path = r"E:\БОТ2"  # корень проекта, где лежит .git
         commit_msg = f"Добавлен лендинг {landing_name}"
         success, push_msg = git_push(repo_path, commit_msg)
         if success:

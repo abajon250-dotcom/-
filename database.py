@@ -10,18 +10,27 @@ async def init_db():
         # Таблица аккаунтов
         await db.execute('''CREATE TABLE IF NOT EXISTS accounts
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
+             user_id INTEGER NOT NULL DEFAULT 0,
              platform TEXT NOT NULL,
              credentials TEXT NOT NULL,
              status TEXT DEFAULT 'active',
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        # Проверка наличия колонки user_id (для старых баз)
+        cursor = await db.execute("PRAGMA table_info(accounts)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if 'user_id' not in columns:
+            await db.execute("ALTER TABLE accounts ADD COLUMN user_id INTEGER DEFAULT 0")
+
         # Таблица шаблонов
         await db.execute('''CREATE TABLE IF NOT EXISTS templates
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
+             user_id INTEGER NOT NULL,
              name TEXT NOT NULL,
              platform TEXT NOT NULL,
              text TEXT,
              media_path TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         # Таблица кампаний
         await db.execute('''CREATE TABLE IF NOT EXISTS campaigns
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,6 +45,7 @@ async def init_db():
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
              started_at TIMESTAMP,
              completed_at TIMESTAMP)''')
+
         # Таблица лендингов
         await db.execute('''CREATE TABLE IF NOT EXISTS landings
             (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +53,7 @@ async def init_db():
              template_name TEXT,
              html_path TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         # Таблица подписок
         await db.execute('''CREATE TABLE IF NOT EXISTS subscriptions
             (user_id INTEGER PRIMARY KEY,
@@ -50,6 +61,7 @@ async def init_db():
              expires_at TIMESTAMP,
              payment_method TEXT,
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         # Таблица инвойсов
         await db.execute('''CREATE TABLE IF NOT EXISTS invoices
             (invoice_id TEXT PRIMARY KEY,
@@ -58,6 +70,7 @@ async def init_db():
              method TEXT NOT NULL,
              status TEXT DEFAULT 'pending',
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         # Таблица пользователей
         await db.execute('''CREATE TABLE IF NOT EXISTS users
             (user_id INTEGER PRIMARY KEY,
@@ -67,16 +80,7 @@ async def init_db():
              balance REAL DEFAULT 0,
              is_blocked INTEGER DEFAULT 0,
              registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        # Таблица транзакций
-        await db.execute('''CREATE TABLE IF NOT EXISTS transactions
-            (id INTEGER PRIMARY KEY AUTOINCREMENT,
-             user_id INTEGER NOT NULL,
-             amount REAL NOT NULL,
-             type TEXT,
-             description TEXT,
-             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-
-        # Проверка и добавление недостающих колонок в таблицу users
+        # Проверка наличия колонок в users (для старых баз)
         cursor = await db.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in await cursor.fetchall()]
         if 'is_blocked' not in columns:
@@ -86,58 +90,87 @@ async def init_db():
         if 'balance' not in columns:
             await db.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0")
 
+        # Таблица транзакций
+        await db.execute('''CREATE TABLE IF NOT EXISTS transactions
+            (id INTEGER PRIMARY KEY AUTOINCREMENT,
+             user_id INTEGER NOT NULL,
+             amount REAL NOT NULL,
+             type TEXT,
+             description TEXT,
+             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+
         await db.commit()
 
 # ---------- Аккаунты ----------
-async def add_account(platform: str, credentials: dict):
+async def add_account(user_id: int, platform: str, credentials: dict):
+    """Добавляет аккаунт для указанного пользователя."""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
-            "INSERT INTO accounts (platform, credentials) VALUES (?, ?)",
-            (platform, json.dumps(credentials, ensure_ascii=False))
+            "INSERT INTO accounts (user_id, platform, credentials) VALUES (?, ?, ?)",
+            (user_id, platform, json.dumps(credentials, ensure_ascii=False))
         )
         await db.commit()
 
 async def get_accounts(platform: str = None):
+    """Возвращает все аккаунты (глобально) – для админки."""
     async with aiosqlite.connect(DB_NAME) as db:
         if platform:
-            cursor = await db.execute("SELECT id, platform, credentials, status FROM accounts WHERE platform=?", (platform,))
+            cursor = await db.execute("SELECT id, user_id, platform, credentials, status FROM accounts WHERE platform=?", (platform,))
         else:
-            cursor = await db.execute("SELECT id, platform, credentials, status FROM accounts")
+            cursor = await db.execute("SELECT id, user_id, platform, credentials, status FROM accounts")
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "user_id": r[1], "platform": r[2], "credentials": json.loads(r[3]), "status": r[4]} for r in rows]
+
+async def get_user_accounts(user_id: int) -> list:
+    """Возвращает список аккаунтов конкретного пользователя."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id, platform, credentials, status FROM accounts WHERE user_id=?", (user_id,)
+        )
         rows = await cursor.fetchall()
         return [{"id": r[0], "platform": r[1], "credentials": json.loads(r[2]), "status": r[3]} for r in rows]
 
 async def get_account(account_id: int):
+    """Возвращает один аккаунт по его ID (независимо от пользователя)."""
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT id, platform, credentials, status FROM accounts WHERE id=?", (account_id,))
+        cursor = await db.execute("SELECT id, user_id, platform, credentials, status FROM accounts WHERE id=?", (account_id,))
         row = await cursor.fetchone()
         if row:
-            return {"id": row[0], "platform": row[1], "credentials": json.loads(row[2]), "status": row[3]}
+            return {"id": row[0], "user_id": row[1], "platform": row[2], "credentials": json.loads(row[3]), "status": row[4]}
         return None
 
 # ---------- Шаблоны ----------
-async def add_template(name: str, platform: str, text: str, media_path: str = None):
+async def add_template(user_id: int, name: str, platform: str, text: str, media_path: str = None):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
-            "INSERT INTO templates (name, platform, text, media_path) VALUES (?, ?, ?, ?)",
-            (name, platform, text, media_path)
+            "INSERT INTO templates (user_id, name, platform, text, media_path) VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, platform, text, media_path)
         )
         await db.commit()
 
-async def get_templates(platform: str = None):
+async def get_templates(platform: str = None, user_id: int = None):
     async with aiosqlite.connect(DB_NAME) as db:
+        query = "SELECT id, user_id, name, platform, text FROM templates"
+        params = []
+        conditions = []
         if platform:
-            cursor = await db.execute("SELECT id, name, platform, text FROM templates WHERE platform=?", (platform,))
-        else:
-            cursor = await db.execute("SELECT id, name, platform, text FROM templates")
+            conditions.append("platform=?")
+            params.append(platform)
+        if user_id:
+            conditions.append("user_id=?")
+            params.append(user_id)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        cursor = await db.execute(query, params)
         rows = await cursor.fetchall()
-        return [{"id": r[0], "name": r[1], "platform": r[2], "text": r[3]} for r in rows]
+        return [{"id": r[0], "user_id": r[1], "name": r[2], "platform": r[3], "text": r[4]} for r in rows]
 
 async def get_template(template_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT id, name, platform, text, media_path FROM templates WHERE id=?", (template_id,))
+        cursor = await db.execute("SELECT id, user_id, name, platform, text, media_path FROM templates WHERE id=?", (template_id,))
         row = await cursor.fetchone()
         if row:
-            return {"id": row[0], "name": row[1], "platform": row[2], "text": row[3], "media_path": row[4]}
+            return {"id": row[0], "user_id": row[1], "name": row[2], "platform": row[3], "text": row[4], "media_path": row[5]}
         return None
 
 # ---------- Кампании ----------
@@ -154,19 +187,37 @@ async def update_campaign_status(campaign_id: int, status: str):
         await db.execute("UPDATE campaigns SET status=? WHERE id=?", (status, campaign_id))
         await db.commit()
 
-async def get_campaigns():
+async def get_campaigns(user_id: int = None):
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute(
-            "SELECT id, user_id, platform, status, created_at FROM campaigns ORDER BY created_at DESC"
-        )
+        if user_id:
+            cursor = await db.execute(
+                "SELECT id, user_id, platform, status, created_at FROM campaigns WHERE user_id=? ORDER BY created_at DESC",
+                (user_id,)
+            )
+        else:
+            cursor = await db.execute(
+                "SELECT id, user_id, platform, status, created_at FROM campaigns ORDER BY created_at DESC"
+            )
         rows = await cursor.fetchall()
         return [{"id": r[0], "user_id": r[1], "platform": r[2], "status": r[3], "created_at": r[4]} for r in rows]
 
-async def get_campaigns_count() -> int:
+async def get_campaigns_count(user_id: int = None) -> int:
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM campaigns")
+        if user_id:
+            cursor = await db.execute("SELECT COUNT(*) FROM campaigns WHERE user_id=?", (user_id,))
+        else:
+            cursor = await db.execute("SELECT COUNT(*) FROM campaigns")
         row = await cursor.fetchone()
         return row[0] or 0
+
+# ---------- Лендинги ----------
+async def add_landing(name: str, template_name: str, html_path: str):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "INSERT INTO landings (name, template_name, html_path) VALUES (?, ?, ?)",
+            (name, template_name, html_path)
+        )
+        await db.commit()
 
 async def get_landings_count() -> int:
     async with aiosqlite.connect(DB_NAME) as db:
@@ -174,9 +225,13 @@ async def get_landings_count() -> int:
         row = await cursor.fetchone()
         return row[0] or 0
 
-async def get_templates_count() -> int:
+# ---------- Шаблоны (количество) ----------
+async def get_templates_count(user_id: int = None) -> int:
     async with aiosqlite.connect(DB_NAME) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM templates")
+        if user_id:
+            cursor = await db.execute("SELECT COUNT(*) FROM templates WHERE user_id=?", (user_id,))
+        else:
+            cursor = await db.execute("SELECT COUNT(*) FROM templates")
         row = await cursor.fetchone()
         return row[0] or 0
 
@@ -263,7 +318,6 @@ async def get_user(user_id: int):
 
 async def add_user(user_id: int, username: str, first_name: str, last_name: str):
     async with aiosqlite.connect(DB_NAME) as db:
-        # Динамическое добавление, чтобы не зависеть от структуры
         cursor = await db.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in await cursor.fetchall()]
         cols = []
@@ -337,6 +391,7 @@ async def get_inactive_users_count() -> int:
     active = await get_active_subscriptions_count()
     return total - active
 
+# ---------- Статистика транзакций ----------
 async def get_replenishments_stats() -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
@@ -356,3 +411,13 @@ async def get_subscription_purchases_stats() -> dict:
         count = row[0] or 0
         total = row[1] or 0.0
         return {"count": count, "total": total}
+
+    async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
+        """Возвращает список аккаунтов пользователя для конкретной платформы."""
+        async with aiosqlite.connect(DB_NAME) as db:
+            cursor = await db.execute(
+                "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
+                (user_id, platform)
+            )
+            rows = await cursor.fetchall()
+            return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]

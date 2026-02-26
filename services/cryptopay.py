@@ -4,10 +4,6 @@ from config import CRYPTO_PAY_TOKEN
 API_URL = "https://pay.crypt.bot/api"
 
 def create_invoice(amount_usd: float, description: str = "Подписка"):
-    """
-    Создаёт счёт в Crypto Pay на сумму amount_usd (в USDT).
-    Возвращает (invoice_id, pay_url).
-    """
     url = f"{API_URL}/createInvoice"
     headers = {
         "Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN,
@@ -18,7 +14,7 @@ def create_invoice(amount_usd: float, description: str = "Подписка"):
         "amount": str(amount_usd),
         "description": description,
         "paid_btn_name": "openBot",
-        "paid_btn_url": "https://t.me/sjkgsjdfshdjbot",  # замените на своего бота
+        "paid_btn_url": "https://t.me/sjkgsjdfshdjbot",  # можете оставить своего бота
         "allow_comments": False,
         "allow_anonymous": False
     }
@@ -30,10 +26,6 @@ def create_invoice(amount_usd: float, description: str = "Подписка"):
         raise Exception(f"CryptoPay error: {data}")
 
 def check_invoice(invoice_id: str):
-    """
-    Проверяет статус счёта по invoice_id.
-    Возвращает статус (paid, active, expired) или None.
-    """
     url = f"{API_URL}/getInvoices"
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
     params = {"invoice_ids": invoice_id}

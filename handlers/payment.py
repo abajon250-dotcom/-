@@ -6,7 +6,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-# Попытка импорта из базы данных
 try:
     from database import (
         get_subscription, set_subscription,
@@ -19,7 +18,6 @@ except ImportError as e:
     DB_OK = False
     print(f"⚠️ Ошибка импорта из database: {e}")
 
-# Попытка импорта из cryptopay
 try:
     from services.cryptopay import create_invoice as create_crypto_invoice, check_invoice as check_crypto_invoice
     CRYPTO_OK = True
@@ -33,7 +31,6 @@ from config import ADMIN_IDS
 
 router = Router()
 
-# ================== ТАРИФЫ ПОДПИСКИ ==================
 SUBSCRIPTION_TARIFFS = {
     "1day":   {"price": 1.5,  "days": 1,   "label": "1 день"},
     "week":   {"price": 10.0, "days": 7,   "label": "Неделя"},
@@ -49,7 +46,6 @@ class PaymentState(StatesGroup):
     choosing_method = State()
     waiting_for_payment = State()
 
-# ================== КЛАВИАТУРЫ ==================
 def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="👤 Профиль", callback_data="profile")
@@ -72,7 +68,6 @@ def get_accounts_reply_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-# ================== ПРОВЕРКА ПОДПИСКИ ==================
 async def check_subscription(user_id: int) -> bool:
     if user_id in ADMIN_IDS:
         return True
@@ -91,10 +86,9 @@ async def check_subscription(user_id: int) -> bool:
         pass
     return False
 
-# ================== ОБРАБОТЧИКИ ГЛАВНОГО МЕНЮ ==================
+# ---------- ПРОФИЛЬ ----------
 @router.callback_query(F.data == "profile")
 async def profile_callback(callback: types.CallbackQuery):
-    # (этот обработчик уже есть, оставляем как есть)
     try:
         if DB_OK and await is_user_blocked(callback.from_user.id):
             await callback.message.edit_text("🚫 Вы заблокированы.")
@@ -151,7 +145,6 @@ async def profile_callback(callback: types.CallbackQuery):
 # ---------- КУПИТЬ ПОДПИСКУ ----------
 @router.callback_query(F.data == "buy_subscription")
 async def buy_subscription_callback(callback: types.CallbackQuery, state: FSMContext):
-    # Проверка блокировки
     try:
         if DB_OK and await is_user_blocked(callback.from_user.id):
             await callback.message.edit_text("🚫 Вы заблокированы.")
@@ -202,7 +195,7 @@ async def tariff_chosen(callback: types.CallbackQuery, state: FSMContext):
     builder.adjust(1)
     info = f"Тариф: {tariff['label']}\nСумма: {tariff['price']} USDT"
     if DB_OK and balance < tariff["price"]:
-        info += f"\n\n⚠️ На балансе недостаточно средств ({balance} USDT). Пополни или выбери другой способ."
+        info += f"\n\n⚠️ На балансе недостаточно средств ({balance} USDT)."
     await callback.message.edit_text(info, reply_markup=builder.as_markup())
     await state.set_state(PaymentState.choosing_method)
     await callback.answer()
@@ -249,8 +242,9 @@ async def pay_with_cryptobot(callback: types.CallbackQuery, state: FSMContext):
         pass
 
     if not CRYPTO_OK:
-        await callback.message.edit_text("❌ CryptoBot временно недоступен.")
+        await callback.message.edit_text("❌ CryptoBot временно недоступен. Попробуйте позже или оплатите с баланса.")
         await state.clear()
+        await callback.answer()
         return
 
     data = await state.get_data()
@@ -296,10 +290,7 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
     days = data["days"]
     user_id = callback.from_user.id
     try:
-        if method == "cryptobot":
-            status = check_crypto_invoice(invoice_id)
-        else:
-            status = "paid"  # заглушка для xrocket
+        status = check_crypto_invoice(invoice_id)
         if status == "paid":
             expires_at = datetime.now() + timedelta(days=days)
             await set_subscription(user_id, "active", expires_at.isoformat(), method)
@@ -431,7 +422,7 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
         if method == "cryptobot":
             status = check_crypto_invoice(invoice_id)
         else:
-            status = "paid"  # заглушка
+            status = "paid"
         if status == "paid":
             await update_balance(user_id, amount)
             await add_transaction(user_id, amount, "replenish", f"Пополнение через {method}")
@@ -445,29 +436,16 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await callback.answer(f"❌ Ошибка при проверке: {e}", show_alert=True)
 
-# ---------- ОСТАЛЬНЫЕ КНОПКИ ----------
+# ---------- АККАУНТЫ (перенаправление) ----------
 @router.callback_query(F.data == "accounts_menu")
 async def accounts_menu_callback(callback: types.CallbackQuery):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
-    if not await check_subscription(callback.from_user.id):
-        await callback.message.edit_text(
-            "❌ У тебя нет активной подписки.",
-            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
-        )
-        await callback.answer()
-        return
-    await callback.message.answer(
-        "📱 Выбери платформу для добавления аккаунта:",
-        reply_markup=get_accounts_reply_keyboard()
-    )
+    # Этот обработчик будет вызван, если в accounts.py нет своего.
+    # В вашем accounts.py уже есть обработчик, поэтому сюда он не попадёт.
+    # Оставляем заглушку.
+    await callback.message.edit_text("📱 Переход в раздел аккаунтов...", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
+# ---------- ШАБЛОНЫ (заглушка) ----------
 @router.callback_query(F.data == "templates_menu")
 async def templates_menu_callback(callback: types.CallbackQuery):
     try:
@@ -477,16 +455,10 @@ async def templates_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
-    if not await check_subscription(callback.from_user.id):
-        await callback.message.edit_text(
-            "❌ Нужна подписка.",
-            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
-        )
-        await callback.answer()
-        return
     await callback.message.edit_text("📝 Управление шаблонами (в разработке)", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
+# ---------- РАССЫЛКИ (заглушка) ----------
 @router.callback_query(F.data == "campaigns_menu")
 async def campaigns_menu_callback(callback: types.CallbackQuery):
     try:
@@ -496,16 +468,10 @@ async def campaigns_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
-    if not await check_subscription(callback.from_user.id):
-        await callback.message.edit_text(
-            "❌ Нужна подписка.",
-            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
-        )
-        await callback.answer()
-        return
     await callback.message.edit_text("🚀 Рассылки (в разработке)", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
+# ---------- ЯНДЕКС (заглушка, реальный хендлер в yandex.py) ----------
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu_callback(callback: types.CallbackQuery):
     try:
@@ -515,23 +481,19 @@ async def yandex_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
-    if not await check_subscription(callback.from_user.id):
-        await callback.message.edit_text(
-            "❌ Нужна подписка.",
-            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
-        )
-        await callback.answer()
-        return
+    # Вызовем хендлер из yandex.py, отправив callback, но если он не зарегистрирован, попадём сюда
+    # Поэтому лучше показать меню лендингов
     builder = InlineKeyboardBuilder()
     builder.button(text="🌐 Создать лендинг", callback_data="yandex_create_landing")
     builder.button(text="◀️ Назад", callback_data="main_menu")
     builder.adjust(1)
     await callback.message.edit_text(
-        "🌐 Яндекс.Реклама (в разработке)",
+        "🌐 Яндекс.Лендинги",
         reply_markup=builder.as_markup()
     )
     await callback.answer()
 
+# ---------- ИНФОРМАЦИЯ ----------
 @router.callback_query(F.data == "info")
 async def info_callback(callback: types.CallbackQuery):
     try:
@@ -554,6 +516,7 @@ async def info_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
+# ---------- ПОДДЕРЖКА ----------
 @router.callback_query(F.data == "support")
 async def support_callback(callback: types.CallbackQuery):
     try:
@@ -572,6 +535,7 @@ async def support_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
+# ---------- ГЛАВНОЕ МЕНЮ ----------
 @router.callback_query(F.data == "main_menu")
 async def main_menu_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(

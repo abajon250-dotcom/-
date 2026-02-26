@@ -3,11 +3,12 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import add_account, is_user_blocked
+from database import add_account, get_user_accounts, is_user_blocked
 from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
 from handlers.common import get_nav_keyboard
+from handlers.payment import get_main_menu_keyboard
 
 router = Router()
 
@@ -18,7 +19,52 @@ class AddAccountState(StatesGroup):
     waiting_for_2fa = State()
     auth_instance = State()
 
-# ----- Обработчики текстовых кнопок (из reply-меню) -----
+# ================== Отображение списка аккаунтов ==================
+@router.callback_query(F.data == "accounts_menu")
+async def accounts_menu_callback(callback: types.CallbackQuery):
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
+
+    user_id = callback.from_user.id
+    accounts = await get_user_accounts(user_id)
+
+    if accounts:
+        text = "📱 <b>Ваши подключённые аккаунты:</b>\n\n"
+        for acc in accounts:
+            # Показываем платформу и номер телефона (если есть)
+            phone = acc['credentials'].get('phone', 'не указан')
+            text += f"• {acc['platform']}: {phone} — статус: {acc['status']}\n"
+    else:
+        text = "📱 У вас пока нет подключённых аккаунтов."
+
+    # Клавиатура для добавления нового аккаунта
+    from handlers.payment import get_accounts_reply_keyboard
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
+    await callback.answer()
+
+# ----- Заглушка для VK -----
+@router.message(F.text == "📘 VK")
+async def vk_account_start(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
+    await message.answer("📘 Добавление VK‑аккаунта пока в разработке. Скоро появится!")
+    from handlers.start import cmd_start
+    await cmd_start(message)
+
+# ----- Заглушка для MAX -----
+@router.message(F.text == "📱 MAX")
+async def max_account_start(message: types.Message, state: FSMContext):
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
+    await message.answer("📱 Добавление MAX‑аккаунта пока в разработке. Скоро появится!")
+    from handlers.start import cmd_start
+    await cmd_start(message)
+
+# ----- Рабочий Telegram -----
 @router.message(F.text == "✈️ Telegram")
 async def telegram_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -31,77 +77,7 @@ async def telegram_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-@router.message(F.text == "📘 VK")
-async def vk_account_start(message: types.Message, state: FSMContext):
-    if await is_user_blocked(message.from_user.id):
-        await message.answer("🚫 Вы заблокированы.")
-        return
-    await state.update_data(platform="vk")
-    await message.answer(
-        "Введи номер телефона в международном формате (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
-
-@router.message(F.text == "📱 MAX")
-async def max_account_start(message: types.Message, state: FSMContext):
-    if await is_user_blocked(message.from_user.id):
-        await message.answer("🚫 Вы заблокированы.")
-        return
-    await state.update_data(platform="max")
-    await message.answer(
-        "Введи номер телефона для MAX (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
-
-# ----- Обработчик для кнопки "Назад в меню" -----
-@router.message(F.text == "◀️ Назад в меню")
-async def back_to_main_menu(message: types.Message):
-    from handlers.start import cmd_start
-    await cmd_start(message)
-
-# ----- (Опционально) Обработчики инлайн-кнопок на случай, если они где-то используются -----
-@router.callback_query(F.data == "platform_telegram")
-async def telegram_chosen(callback: types.CallbackQuery, state: FSMContext):
-    if await is_user_blocked(callback.from_user.id):
-        await callback.message.edit_text("🚫 Вы заблокированы.")
-        await callback.answer()
-        return
-    await state.update_data(platform="telegram")
-    await callback.message.edit_text(
-        "Введи номер телефона в международном формате (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
-
-@router.callback_query(F.data == "platform_vk")
-async def vk_chosen(callback: types.CallbackQuery, state: FSMContext):
-    if await is_user_blocked(callback.from_user.id):
-        await callback.message.edit_text("🚫 Вы заблокированы.")
-        await callback.answer()
-        return
-    await state.update_data(platform="vk")
-    await callback.message.edit_text(
-        "Введи номер телефона в международном формате (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
-
-@router.callback_query(F.data == "platform_max")
-async def max_chosen(callback: types.CallbackQuery, state: FSMContext):
-    if await is_user_blocked(callback.from_user.id):
-        await callback.message.edit_text("🚫 Вы заблокированы.")
-        await callback.answer()
-        return
-    await state.update_data(platform="max")
-    await callback.message.edit_text(
-        "Введи номер телефона для MAX (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
-
-# ----- Общий обработчик ввода номера -----
+# ----- Ввод номера телефона -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -118,8 +94,9 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
+    # MAX оставлен как заглушка, но если платформа max, сохраняем сразу
     if platform == "max":
-        await add_account(platform, {"phone": phone})
+        await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
         await state.clear()
         from handlers.start import cmd_start
@@ -130,7 +107,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
         if platform == "telegram":
             auth = TelegramAuth(phone)
             await auth.send_code()
-        else:
+        else:  # vk (пока не работает)
             auth = VkAuth(phone)
             await auth.send_code()
 
@@ -150,6 +127,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при отправке кода: {e}")
         await state.clear()
 
+# ----- Возврат к вводу номера (кнопка "Назад") -----
 @router.callback_query(F.data == "back_to_phone", AddAccountState.waiting_for_code)
 async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
     if await is_user_blocked(callback.from_user.id):
@@ -162,6 +140,7 @@ async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=get_nav_keyboard(show_cancel=True)
     )
 
+# ----- Ввод кода подтверждения -----
 @router.message(AddAccountState.waiting_for_code)
 async def code_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -191,6 +170,7 @@ async def code_entered(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при проверке кода: {e}")
         await state.clear()
 
+# ----- Ввод двухфакторного пароля -----
 @router.message(AddAccountState.waiting_for_2fa)
 async def twofa_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -207,10 +187,11 @@ async def twofa_entered(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при проверке пароля: {e}")
         await state.clear()
 
+# ----- Завершение добавления аккаунта -----
 async def finalize_login(message: types.Message, state: FSMContext, auth, platform):
     credentials = auth.get_credentials()
     log_action(message.from_user.id, "add_account", f"{platform}: {credentials.get('phone', '')}")
-    await add_account(platform, credentials)
+    await add_account(message.from_user.id, platform, credentials)
     await message.answer(f"✅ Аккаунт {platform} успешно добавлен!")
     await state.clear()
     from handlers.start import cmd_start
