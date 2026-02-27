@@ -1,3 +1,4 @@
+print("GITHUB_TOKEN =", os.getenv("GITHUB_TOKEN"))
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
