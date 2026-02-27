@@ -1,5 +1,4 @@
 import os
-import subprocess
 import requests
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
@@ -33,20 +32,6 @@ def shorten_url(long_url):
     except Exception as e:
         print(f"Ошибка сокращения ссылки: {e}")
     return long_url
-
-def git_push(repo_path, commit_message):
-    """
-    Автоматический пуш лендингов на GitHub.
-    При необходимости можно закомментировать, если на сервере нет Git.
-    """
-    try:
-        os.chdir(repo_path)
-        subprocess.run(["git", "add", "landings"], check=True)
-        subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        subprocess.run(["git", "push"], check=True)
-        return True, "Успешно запушено"
-    except subprocess.CalledProcessError as e:
-        return False, str(e)
 
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu(callback: types.CallbackQuery):
@@ -103,6 +88,7 @@ async def landing_template(callback: types.CallbackQuery, state: FSMContext):
     template = callback.data.replace("tpl_", "")
     await state.update_data(template=template)
 
+    # Картинка по умолчанию (если пользователь не отправит свою)
     if template == "gibdd":
         default_image = "https://source.unsplash.com/featured/?accident,police"
     elif template == "accident":
@@ -190,16 +176,20 @@ async def landing_offer(message: types.Message, state: FSMContext):
 
 @router.message(YandexState.photo, F.photo)
 async def landing_photo(message: types.Message, state: FSMContext, bot: Bot):
-    photo = message.photo[-1]
-    file = await bot.get_file(photo.file_id)
-    data = await state.get_data()
-    landing_name = data["landing_name"]
-    landing_dir = os.path.join(LANDING_STORAGE_PATH, landing_name)
-    os.makedirs(landing_dir, exist_ok=True)
-    photo_filename = "user_photo.jpg"
-    photo_path = os.path.join(landing_dir, photo_filename)
-    await bot.download_file(file.file_path, photo_path)
-    await state.update_data(image_path=photo_filename)
+    try:
+        photo = message.photo[-1]
+        file = await bot.get_file(photo.file_id)
+        data = await state.get_data()
+        landing_name = data["landing_name"]
+        landing_dir = os.path.join(LANDING_STORAGE_PATH, landing_name)
+        os.makedirs(landing_dir, exist_ok=True)
+        photo_filename = "user_photo.jpg"
+        photo_path = os.path.join(landing_dir, photo_filename)
+        await bot.download_file(file.file_path, photo_path)
+        await state.update_data(image_path=photo_filename)
+    except Exception as e:
+        await message.answer(f"⚠️ Не удалось сохранить фото: {e}. Использую фото по умолчанию.")
+        await state.update_data(image_path=None)
     await finalize_landing(message, state)
 
 @router.message(YandexState.photo, F.text.lower() == "пропустить")
@@ -220,6 +210,7 @@ async def finalize_landing(message: types.Message, state: FSMContext):
     button_text = data["button_text"]
     offer_link = data["offer_link"]
 
+    # Определяем URL изображения
     if data.get("image_path"):
         base = LANDING_BASE_URL.rstrip('/')
         image_url = f"{base}/{landing_name}/{data['image_path']}"
@@ -242,18 +233,10 @@ async def finalize_landing(message: types.Message, state: FSMContext):
         )
         log_action(message.from_user.id, "create_landing", landing_name)
 
-        # Автопуш на GitHub (если Git установлен и настроен)
-        repo_path = r"E:\БОТ2"  # замените на путь к корню вашего проекта на сервере, если нужно
-        commit_msg = f"Добавлен лендинг {landing_name}"
-        # Если на сервере нет Git, закомментируйте следующие строки:
-        success, push_msg = git_push(repo_path, commit_msg)
-        if success:
-            await message.answer("✅ Лендинг создан и загружен на GitHub!")
-        else:
-            await message.answer(f"⚠️ Лендинг создан локально, но не запушен: {push_msg}")
+        # Уведомление о создании (без пуша)
+        await message.answer(f"✅ Лендинг создан локально!\n🌐 Обычная ссылка:\n{url}")
 
-        # Показываем обычную и короткую ссылки
-        await message.answer(f"🌐 Обычная ссылка:\n{url}")
+        # Короткая ссылка
         short_url = shorten_url(url)
         await message.answer(f"🔗 Короткая ссылка:\n{short_url}")
 
