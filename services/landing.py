@@ -70,26 +70,53 @@ DEFAULT_TEMPLATES = {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{title}} — COVID-19</title>
+    <title>{{title}} — Официальная информация</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: linear-gradient(145deg, #0b2b3f, #1a4b6d); font-family: 'Poppins', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-        .card { max-width: 900px; width: 100%; background: rgba(255,255,255,0.1); backdrop-filter: blur(12px); border-radius: 40px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); }
-        .card-img { width: 100%; height: 350px; background-image: url('{{image_url}}'); background-size: cover; background-position: center; }
-        .card-content { padding: 40px; text-align: center; color: white; }
-        .title { font-size: 42px; font-weight: 700; margin-bottom: 15px; text-shadow: 0 4px 8px rgba(0,0,0,0.3); }
-        .desc { font-size: 20px; line-height: 1.5; margin-bottom: 30px; background: rgba(255,255,255,0.2); padding: 20px; border-radius: 20px; }
-        .btn { background: #facc15; color: #1e293b; padding: 16px 48px; font-size: 20px; font-weight: 600; border-radius: 60px; text-decoration: none; display: inline-block; transition: 0.3s; }
-        .btn:hover { background: #eab308; transform: translateY(-5px); box-shadow: 0 20px 30px -10px #facc15; }
+        body { font-family: 'Arial', 'Helvetica', sans-serif; background: #f4f7fb; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .hospital-card { max-width: 900px; width: 100%; background: white; border-radius: 24px; overflow: hidden; box-shadow: 0 15px 35px rgba(0, 51, 102, 0.2); border: 1px solid #e0e7ef; }
+        .hospital-header { background: linear-gradient(135deg, #0057a3 0%, #003d73 100%); color: white; padding: 25px 30px; display: flex; align-items: center; gap: 15px; }
+        .hospital-header i { font-size: 40px; background: rgba(255,255,255,0.2); width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .hospital-header h1 { font-size: 28px; font-weight: 600; letter-spacing: 0.5px; }
+        .hospital-badge { background: #ffd966; color: #003d73; padding: 4px 15px; border-radius: 30px; font-size: 14px; font-weight: 700; margin-left: 15px; }
+        .hospital-content { padding: 30px; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .info-item { background: #f0f6ff; padding: 15px; border-radius: 16px; border-left: 4px solid #0057a3; }
+        .info-label { color: #003d73; font-weight: 600; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+        .info-value { font-size: 18px; font-weight: 500; color: #1e293b; }
+        .description-block { background: #f8fafc; padding: 20px; border-radius: 16px; margin-bottom: 25px; border: 1px solid #d9e2ef; }
+        .description-block p { font-size: 16px; line-height: 1.7; color: #2c3e50; }
+        .btn-hospital { display: inline-block; background: #0057a3; color: white; font-weight: 600; font-size: 18px; padding: 16px 40px; border-radius: 60px; text-decoration: none; width: 100%; text-align: center; border: none; cursor: pointer; transition: background 0.2s; box-shadow: 0 8px 20px rgba(0,87,163,0.3); }
+        .btn-hospital:hover { background: #003d73; }
+        .hospital-footer { margin-top: 25px; border-top: 1px solid #d9e2ef; padding-top: 20px; display: flex; justify-content: space-between; color: #5e6f8d; font-size: 14px; }
+        .hospital-footer span i { margin-right: 5px; }
+        .emergency { background: #fee2e2; color: #b91c1c; border-radius: 50px; padding: 4px 15px; font-weight: 600; font-size: 13px; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="card-img" style="background-image: url('{{image_url}}');"></div>
-        <div class="card-content">
-            <h1 class="title">{{title}}</h1>
-            <p class="desc">{{description}}</p>
-            <a href="{{offer_link}}" class="btn">{{button_text}}</a>
+    <div class="hospital-card">
+        <div class="hospital-header">
+            <i>🏥</i>
+            <div>
+                <h1>Городская клиническая больница №1</h1>
+                <span class="hospital-badge">Официальный источник</span>
+            </div>
+        </div>
+        <div class="hospital-content">
+            <div class="info-grid">
+                <div class="info-item"><div class="info-label">Дата публикации</div><div class="info-value">{{date}}</div></div>
+                <div class="info-item"><div class="info-label">Категория</div><div class="info-value">{{category}}</div></div>
+            </div>
+            <div class="description-block">
+                <h2 style="margin-bottom: 15px; color: #003d73;">{{title}}</h2>
+                <p>{{description}}</p>
+            </div>
+            <a href="{{offer_link}}" class="btn-hospital">{{button_text}}</a>
+            <div class="hospital-footer">
+                <span><i>👁️</i> {{views}} просмотров</span>
+                <span><i>🔗</i> {{source}}</span>
+                <span class="emergency">🚑 Единый номер: 103</span>
+            </div>
         </div>
     </div>
 </body>
