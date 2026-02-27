@@ -8,7 +8,7 @@ from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
 from handlers.common import get_nav_keyboard
-from handlers.payment import get_accounts_reply_keyboard, get_main_menu_keyboard
+from handlers.payment import get_accounts_reply_keyboard
 
 router = Router()
 
@@ -168,7 +168,6 @@ async def code_entered(message: types.Message, state: FSMContext):
                 "⏳ Код подтверждения истёк. Нажмите «Назад» и запросите код заново.",
                 reply_markup=get_nav_keyboard(show_cancel=True)
             )
-            # Можно вернуться к вводу номера, для простоты очистим состояние и предложим начать заново
             await state.clear()
             from handlers.start import cmd_start
             await cmd_start(message)
