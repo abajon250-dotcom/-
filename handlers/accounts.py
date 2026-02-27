@@ -8,7 +8,7 @@ from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
 from handlers.common import get_nav_keyboard
-from handlers.payment import get_main_menu_keyboard
+from handlers.payment import get_accounts_reply_keyboard, get_main_menu_keyboard
 
 router = Router()
 
@@ -33,14 +33,11 @@ async def accounts_menu_callback(callback: types.CallbackQuery):
     if accounts:
         text = "📱 <b>Ваши подключённые аккаунты:</b>\n\n"
         for acc in accounts:
-            # Показываем платформу и номер телефона (если есть)
             phone = acc['credentials'].get('phone', 'не указан')
             text += f"• {acc['platform']}: {phone} — статус: {acc['status']}\n"
     else:
         text = "📱 У вас пока нет подключённых аккаунтов."
 
-    # Клавиатура для добавления нового аккаунта
-    from handlers.payment import get_accounts_reply_keyboard
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
     await callback.answer()
 
@@ -77,7 +74,7 @@ async def telegram_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Ввод номера телефона -----
+# ----- Ввод номера -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -94,7 +91,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
-    # MAX оставлен как заглушка, но если платформа max, сохраняем сразу
+    # MAX (заглушка, но можно сохранить сразу)
     if platform == "max":
         await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
@@ -107,7 +104,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
         if platform == "telegram":
             auth = TelegramAuth(phone)
             await auth.send_code()
-        else:  # vk (пока не работает)
+        else:  # vk (заглушка)
             auth = VkAuth(phone)
             await auth.send_code()
 
@@ -127,7 +124,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при отправке кода: {e}")
         await state.clear()
 
-# ----- Возврат к вводу номера (кнопка "Назад") -----
 @router.callback_query(F.data == "back_to_phone", AddAccountState.waiting_for_code)
 async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
     if await is_user_blocked(callback.from_user.id):
@@ -140,7 +136,6 @@ async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
         reply_markup=get_nav_keyboard(show_cancel=True)
     )
 
-# ----- Ввод кода подтверждения -----
 @router.message(AddAccountState.waiting_for_code)
 async def code_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -167,10 +162,20 @@ async def code_entered(message: types.Message, state: FSMContext):
                 reply_markup=get_nav_keyboard(show_cancel=True)
             )
     except Exception as e:
-        await message.answer(f"❌ Ошибка при проверке кода: {e}")
-        await state.clear()
+        error_text = str(e)
+        if "истёк" in error_text or "expired" in error_text:
+            await message.answer(
+                "⏳ Код подтверждения истёк. Нажмите «Назад» и запросите код заново.",
+                reply_markup=get_nav_keyboard(show_cancel=True)
+            )
+            # Можно вернуться к вводу номера, для простоты очистим состояние и предложим начать заново
+            await state.clear()
+            from handlers.start import cmd_start
+            await cmd_start(message)
+        else:
+            await message.answer(f"❌ Ошибка при проверке кода: {error_text}")
+            await state.clear()
 
-# ----- Ввод двухфакторного пароля -----
 @router.message(AddAccountState.waiting_for_2fa)
 async def twofa_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -187,7 +192,6 @@ async def twofa_entered(message: types.Message, state: FSMContext):
         await message.answer(f"❌ Ошибка при проверке пароля: {e}")
         await state.clear()
 
-# ----- Завершение добавления аккаунта -----
 async def finalize_login(message: types.Message, state: FSMContext, auth, platform):
     credentials = auth.get_credentials()
     log_action(message.from_user.id, "add_account", f"{platform}: {credentials.get('phone', '')}")

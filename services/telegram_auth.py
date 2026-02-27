@@ -6,6 +6,8 @@ from telethon.errors import (
     SessionPasswordNeededError,
     FloodWaitError,
     PhoneNumberInvalidError,
+    PhoneCodeExpiredError,
+    CodeExpiredError,
 )
 from config import TG_API_ID, TG_API_HASH
 
@@ -17,16 +19,13 @@ class TelegramAuth:
         self.phone = phone
         self.api_id = TG_API_ID
         self.api_hash = TG_API_HASH
-        # Если уже есть постоянная сессия – используем её, иначе временную
         session_name = self._get_session_name()
         self.client = TelegramClient(session_name, self.api_id, self.api_hash)
         self.phone_code_hash = None
 
     def _get_session_name(self):
-        """Возвращает имя файла сессии (без расширения)."""
         permanent = os.path.join(SESSIONS_DIR, self.phone)
         temp = os.path.join(SESSIONS_DIR, f'temp_{self.phone}')
-        # Если существует постоянная сессия – используем её
         if os.path.exists(permanent + '.session'):
             return permanent
         return temp
@@ -57,6 +56,10 @@ class TelegramAuth:
             return True
         except SessionPasswordNeededError:
             return "2fa_required"
+        except PhoneCodeExpiredError:
+            raise Exception("Код подтверждения истёк. Запросите новый код.")
+        except CodeExpiredError:
+            raise Exception("Код истёк. Запросите новый код.")
         except Exception as e:
             raise e
 
@@ -67,21 +70,12 @@ class TelegramAuth:
             raise e
 
     def get_credentials(self):
-        """
-        Завершает процесс, сохраняет постоянную сессию.
-        Переименовывает временную сессию в постоянную с обработкой блокировок.
-        """
-        # Отключаем клиент
         self.client.disconnect()
-        # Ждём, чтобы ОС освободила файл
         time.sleep(0.5)
-
         temp_session = os.path.join(SESSIONS_DIR, f'temp_{self.phone}.session')
         final_session = os.path.join(SESSIONS_DIR, f'{self.phone}.session')
-
         if os.path.exists(temp_session):
             try:
-                # Пытаемся переименовать (переместить)
                 os.replace(temp_session, final_session)
                 print(f"✅ Сессия переименована: {final_session}")
             except OSError as e:
@@ -92,8 +86,6 @@ class TelegramAuth:
                     print(f"✅ Сессия скопирована: {final_session}")
                 except Exception as copy_err:
                     print(f"❌ Ошибка копирования: {copy_err}")
-                    # Если не удаётся, оставляем как есть (но это не критично)
-
         return {
             "phone": self.phone,
             "session_file": final_session if os.path.exists(final_session) else temp_session,
