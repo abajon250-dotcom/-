@@ -130,6 +130,17 @@ async def get_user_accounts(user_id: int) -> list:
         rows = await cursor.fetchall()
         return [{"id": r[0], "platform": r[1], "credentials": json.loads(r[2]), "status": r[3]} for r in rows]
 
+# ---------- НОВАЯ ФУНКЦИЯ ----------
+async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
+    """Возвращает список аккаунтов пользователя для конкретной платформы."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute(
+            "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
+            (user_id, platform)
+        )
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]
+
 async def get_account(account_id: int):
     """Возвращает один аккаунт по его ID (независимо от пользователя)."""
     async with aiosqlite.connect(DB_NAME) as db:
@@ -411,13 +422,3 @@ async def get_subscription_purchases_stats() -> dict:
         count = row[0] or 0
         total = row[1] or 0.0
         return {"count": count, "total": total}
-
-    async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
-        """Возвращает список аккаунтов пользователя для конкретной платформы."""
-        async with aiosqlite.connect(DB_NAME) as db:
-            cursor = await db.execute(
-                "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
-                (user_id, platform)
-            )
-            rows = await cursor.fetchall()
-            return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]
