@@ -7,7 +7,6 @@ from telethon.errors import (
     FloodWaitError,
     PhoneNumberInvalidError,
     PhoneCodeExpiredError,
-    CodeExpiredError,
 )
 from config import TG_API_ID, TG_API_HASH
 
