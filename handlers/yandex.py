@@ -1,16 +1,21 @@
 import os
 import requests
+import base64
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from services.landing import generate_landing
-from config import LANDING_STORAGE_PATH, LANDING_BASE_URL
+from config import LANDING_STORAGE_PATH, LANDING_BASE_URL, GITHUB_TOKEN
 from logger import log_action
 from handlers.common import get_nav_keyboard
 from database import is_user_blocked
 
 router = Router()
+
+# Константы
+GITHUB_REPO = "abajon250-dotcom/-"  # ваш репозиторий
+GITHUB_BRANCH = "main"
 
 class YandexState(StatesGroup):
     landing_name = State()
@@ -21,8 +26,9 @@ class YandexState(StatesGroup):
     offer_link = State()
     photo = State()
 
-# Функция сокращения ссылок через clck.ru
+# ------------------ Вспомогательные функции ------------------
 def shorten_url(long_url):
+    """Сокращает ссылку через clck.ru (бесплатно, без регистрации)"""
     try:
         response = requests.get(f"https://clck.ru/--?url={long_url}", timeout=5)
         if response.status_code == 200:
@@ -33,6 +39,49 @@ def shorten_url(long_url):
         print(f"Ошибка сокращения ссылки: {e}")
     return long_url
 
+def upload_to_github(file_path, repo_path):
+    """
+    Загружает файл на GitHub через API.
+    Возвращает (успех, сообщение).
+    """
+    if not GITHUB_TOKEN:
+        return False, "GITHUB_TOKEN не задан (переменная окружения)"
+
+    if not os.path.exists(file_path):
+        return False, f"Файл не найден локально: {file_path}"
+
+    try:
+        with open(file_path, 'rb') as f:
+            content = base64.b64encode(f.read()).decode('utf-8')
+    except Exception as e:
+        return False, f"Ошибка чтения файла: {e}"
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    # Проверяем, существует ли уже файл
+    response = requests.get(url, headers=headers)
+    data = {
+        "message": f"Add landing {repo_path}",
+        "content": content,
+        "branch": GITHUB_BRANCH
+    }
+    if response.status_code == 200:
+        # Файл есть – нужно обновить, передав sha
+        sha = response.json().get('sha')
+        if sha:
+            data['sha'] = sha
+
+    put_response = requests.put(url, json=data, headers=headers)
+    if put_response.status_code in [200, 201]:
+        return True, "Успешно загружено на GitHub"
+    else:
+        return False, f"GitHub API ошибка {put_response.status_code}: {put_response.text}"
+
+# ------------------ Хендлеры ------------------
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu(callback: types.CallbackQuery):
     if await is_user_blocked(callback.from_user.id):
@@ -97,7 +146,7 @@ async def landing_template(callback: types.CallbackQuery, state: FSMContext):
         default_image = "https://source.unsplash.com/featured/?covid,hospital"
     elif template == "max":
         default_image = "https://source.unsplash.com/featured/?smartphone,app"
-    else:
+    else:  # news
         default_image = "https://source.unsplash.com/featured/?newspaper"
 
     await state.update_data(default_image=default_image)
@@ -201,6 +250,7 @@ async def skip_photo(message: types.Message, state: FSMContext):
 async def invalid_photo(message: types.Message):
     await message.answer("Пожалуйста, отправь фотографию или напиши «пропустить».")
 
+# ------------------ Финальная стадия ------------------
 async def finalize_landing(message: types.Message, state: FSMContext):
     data = await state.get_data()
     landing_name = data["landing_name"]
@@ -218,6 +268,7 @@ async def finalize_landing(message: types.Message, state: FSMContext):
         image_url = data.get("default_image", "https://source.unsplash.com/featured/?news")
 
     try:
+        # Генерируем лендинг (сохраняется локально в LANDING_STORAGE_PATH/landing_name/)
         url = generate_landing(
             name=landing_name,
             template_name=template,
@@ -233,12 +284,19 @@ async def finalize_landing(message: types.Message, state: FSMContext):
         )
         log_action(message.from_user.id, "create_landing", landing_name)
 
-        # Уведомление о создании (без пуша)
-        await message.answer(f"✅ Лендинг создан локально!\n🌐 Обычная ссылка:\n{url}")
+        # Загружаем на GitHub
+        local_index = os.path.join(LANDING_STORAGE_PATH, landing_name, "index.html")
+        github_path = f"landings/{landing_name}/index.html"
+        success, msg = upload_to_github(local_index, github_path)
+
+        if success:
+            await message.answer("✅ Лендинг создан и загружен на GitHub!")
+        else:
+            await message.answer(f"⚠️ Лендинг создан локально, но не загружен на GitHub: {msg}")
 
         # Короткая ссылка
         short_url = shorten_url(url)
-        await message.answer(f"🔗 Короткая ссылка:\n{short_url}")
+        await message.answer(f"🌐 Ссылка: {url}\n🔗 Короткая: {short_url}")
 
     except Exception as e:
         await message.answer(f"❌ Ошибка при создании лендинга: {e}")
