@@ -1,5 +1,6 @@
 import os
 import subprocess
+import requests
 from aiogram import Router, types, F, Bot
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -21,23 +22,32 @@ class YandexState(StatesGroup):
     offer_link = State()
     photo = State()
 
-# ================== Функция для авто‑пуша на GitHub ==================
+# Функция сокращения ссылок через clck.ru
+def shorten_url(long_url):
+    try:
+        response = requests.get(f"https://clck.ru/--?url={long_url}", timeout=5)
+        if response.status_code == 200:
+            short = response.text.strip()
+            if short.startswith("http"):
+                return short
+    except Exception as e:
+        print(f"Ошибка сокращения ссылки: {e}")
+    return long_url
+
 def git_push(repo_path, commit_message):
     """
-    Выполняет git add landings, commit и push.
-    repo_path – корень репозитория (где лежит .git).
+    Автоматический пуш лендингов на GitHub.
+    При необходимости можно закомментировать, если на сервере нет Git.
     """
     try:
         os.chdir(repo_path)
-        # Добавляем только папку landings, чтобы не трогать остальные файлы
         subprocess.run(["git", "add", "landings"], check=True)
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
+        subprocess.run(["git", "push"], check=True)
         return True, "Успешно запушено"
     except subprocess.CalledProcessError as e:
         return False, str(e)
 
-# ================== Главное меню Яндекс ==================
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu(callback: types.CallbackQuery):
     if await is_user_blocked(callback.from_user.id):
@@ -54,7 +64,6 @@ async def yandex_menu(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# ================== СОЗДАНИЕ ЛЕНДИНГА ==================
 @router.callback_query(F.data == "yandex_create_landing")
 async def create_landing_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
@@ -94,7 +103,6 @@ async def landing_template(callback: types.CallbackQuery, state: FSMContext):
     template = callback.data.replace("tpl_", "")
     await state.update_data(template=template)
 
-    # Картинка по умолчанию (если пользователь не отправит свою)
     if template == "gibdd":
         default_image = "https://source.unsplash.com/featured/?accident,police"
     elif template == "accident":
@@ -180,7 +188,6 @@ async def landing_offer(message: types.Message, state: FSMContext):
     )
     await state.set_state(YandexState.photo)
 
-# ----- Обработка фото -----
 @router.message(YandexState.photo, F.photo)
 async def landing_photo(message: types.Message, state: FSMContext, bot: Bot):
     photo = message.photo[-1]
@@ -204,7 +211,6 @@ async def skip_photo(message: types.Message, state: FSMContext):
 async def invalid_photo(message: types.Message):
     await message.answer("Пожалуйста, отправь фотографию или напиши «пропустить».")
 
-# ----- Финальная генерация лендинга -----
 async def finalize_landing(message: types.Message, state: FSMContext):
     data = await state.get_data()
     landing_name = data["landing_name"]
@@ -236,16 +242,21 @@ async def finalize_landing(message: types.Message, state: FSMContext):
         )
         log_action(message.from_user.id, "create_landing", landing_name)
 
-        # ===== АВТОМАТИЧЕСКИЙ ПУШ НА GITHUB =====
-        repo_path = r"E:\БОТ2"  # корень проекта, где лежит .git
+        # Автопуш на GitHub (если Git установлен и настроен)
+        repo_path = r"E:\БОТ2"  # замените на путь к корню вашего проекта на сервере, если нужно
         commit_msg = f"Добавлен лендинг {landing_name}"
+        # Если на сервере нет Git, закомментируйте следующие строки:
         success, push_msg = git_push(repo_path, commit_msg)
         if success:
             await message.answer("✅ Лендинг создан и загружен на GitHub!")
         else:
             await message.answer(f"⚠️ Лендинг создан локально, но не запушен: {push_msg}")
 
-        await message.answer(f"🌐 Ссылка: {url}")
+        # Показываем обычную и короткую ссылки
+        await message.answer(f"🌐 Обычная ссылка:\n{url}")
+        short_url = shorten_url(url)
+        await message.answer(f"🔗 Короткая ссылка:\n{short_url}")
+
     except Exception as e:
         await message.answer(f"❌ Ошибка при создании лендинга: {e}")
     await state.clear()
