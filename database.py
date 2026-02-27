@@ -15,7 +15,6 @@ async def init_db():
              credentials TEXT NOT NULL,
              status TEXT DEFAULT 'active',
              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        # Проверка наличия колонки user_id (для старых баз)
         cursor = await db.execute("PRAGMA table_info(accounts)")
         columns = [row[1] for row in await cursor.fetchall()]
         if 'user_id' not in columns:
@@ -80,7 +79,6 @@ async def init_db():
              balance REAL DEFAULT 0,
              is_blocked INTEGER DEFAULT 0,
              registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        # Проверка наличия колонок в users (для старых баз)
         cursor = await db.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in await cursor.fetchall()]
         if 'is_blocked' not in columns:
@@ -103,7 +101,6 @@ async def init_db():
 
 # ---------- Аккаунты ----------
 async def add_account(user_id: int, platform: str, credentials: dict):
-    """Добавляет аккаунт для указанного пользователя."""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
             "INSERT INTO accounts (user_id, platform, credentials) VALUES (?, ?, ?)",
@@ -112,7 +109,6 @@ async def add_account(user_id: int, platform: str, credentials: dict):
         await db.commit()
 
 async def get_accounts(platform: str = None):
-    """Возвращает все аккаунты (глобально) – для админки."""
     async with aiosqlite.connect(DB_NAME) as db:
         if platform:
             cursor = await db.execute("SELECT id, user_id, platform, credentials, status FROM accounts WHERE platform=?", (platform,))
@@ -122,7 +118,6 @@ async def get_accounts(platform: str = None):
         return [{"id": r[0], "user_id": r[1], "platform": r[2], "credentials": json.loads(r[3]), "status": r[4]} for r in rows]
 
 async def get_user_accounts(user_id: int) -> list:
-    """Возвращает список аккаунтов конкретного пользователя."""
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
             "SELECT id, platform, credentials, status FROM accounts WHERE user_id=?", (user_id,)
@@ -130,9 +125,7 @@ async def get_user_accounts(user_id: int) -> list:
         rows = await cursor.fetchall()
         return [{"id": r[0], "platform": r[1], "credentials": json.loads(r[2]), "status": r[3]} for r in rows]
 
-# ---------- НОВАЯ ФУНКЦИЯ ----------
 async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
-    """Возвращает список аккаунтов пользователя для конкретной платформы."""
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
             "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
@@ -142,7 +135,6 @@ async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
         return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]
 
 async def get_account(account_id: int):
-    """Возвращает один аккаунт по его ID (независимо от пользователя)."""
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("SELECT id, user_id, platform, credentials, status FROM accounts WHERE id=?", (account_id,))
         row = await cursor.fetchone()
@@ -315,7 +307,6 @@ async def update_invoice_status(invoice_id: str, status: str):
 # ---------- Пользователи и баланс ----------
 async def get_user(user_id: int):
     async with aiosqlite.connect(DB_NAME) as db:
-        # Получаем список колонок таблицы users
         cursor = await db.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in await cursor.fetchall()]
         if not columns:
@@ -390,7 +381,7 @@ async def unblock_user(user_id: int):
         await db.execute("UPDATE users SET is_blocked=0 WHERE user_id=?", (user_id,))
         await db.commit()
 
-# ---------- Статистика пользователей ----------
+# ---------- Статистика ----------
 async def get_users_count() -> int:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
@@ -402,7 +393,6 @@ async def get_inactive_users_count() -> int:
     active = await get_active_subscriptions_count()
     return total - active
 
-# ---------- Статистика транзакций ----------
 async def get_replenishments_stats() -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
@@ -422,3 +412,19 @@ async def get_subscription_purchases_stats() -> dict:
         count = row[0] or 0
         total = row[1] or 0.0
         return {"count": count, "total": total}
+
+# ---------- Для рассылки ----------
+async def get_all_users() -> list:
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("SELECT user_id FROM users")
+        rows = await cursor.fetchall()
+        return [{"user_id": r[0]} for r in rows]
+
+    async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
+        async with aiosqlite.connect(DB_NAME) as db:
+            cursor = await db.execute(
+                "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
+                (user_id, platform)
+            )
+            rows = await cursor.fetchall()
+            return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]
