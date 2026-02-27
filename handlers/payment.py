@@ -31,6 +31,7 @@ from config import ADMIN_IDS
 
 router = Router()
 
+# ================== ТАРИФЫ ПОДПИСКИ ==================
 SUBSCRIPTION_TARIFFS = {
     "1day":   {"price": 1.5,  "days": 1,   "label": "1 день"},
     "week":   {"price": 10.0, "days": 7,   "label": "Неделя"},
@@ -46,12 +47,13 @@ class PaymentState(StatesGroup):
     choosing_method = State()
     waiting_for_payment = State()
 
+# ================== КЛАВИАТУРЫ ==================
 def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="👤 Профиль", callback_data="profile")
     builder.button(text="💰 Купить подписку", callback_data="buy_subscription")
     builder.button(text="💳 Пополнить баланс", callback_data="replenish_balance")
-    builder.button(text="📱 Аккаунты", callback_data="accounts_menu")
+    builder.button(text="📱 Аккаунты", callback_data="accounts_menu")   # важно!
     builder.button(text="📝 Шаблоны", callback_data="templates_menu")
     builder.button(text="🚀 Рассылки", callback_data="campaigns_menu")
     builder.button(text="🌐 Яндекс", callback_data="yandex_menu")
@@ -68,6 +70,7 @@ def get_accounts_reply_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
+# ================== ПРОВЕРКА ПОДПИСКИ ==================
 async def check_subscription(user_id: int) -> bool:
     if user_id in ADMIN_IDS:
         return True
@@ -86,7 +89,7 @@ async def check_subscription(user_id: int) -> bool:
         pass
     return False
 
-# ---------- ПРОФИЛЬ ----------
+# ================== ОБРАБОТЧИКИ ==================
 @router.callback_query(F.data == "profile")
 async def profile_callback(callback: types.CallbackQuery):
     try:
@@ -142,7 +145,6 @@ async def profile_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
-# ---------- КУПИТЬ ПОДПИСКУ ----------
 @router.callback_query(F.data == "buy_subscription")
 async def buy_subscription_callback(callback: types.CallbackQuery, state: FSMContext):
     try:
@@ -319,7 +321,6 @@ async def pay_with_xrocket(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text("❌ Оплата через Xrocket временно недоступна.")
     await state.clear()
 
-# ---------- ПОПОЛНЕНИЕ БАЛАНСА ----------
 @router.callback_query(F.data == "replenish_balance")
 async def replenish_balance_callback(callback: types.CallbackQuery, state: FSMContext):
     try:
@@ -436,16 +437,6 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await callback.answer(f"❌ Ошибка при проверке: {e}", show_alert=True)
 
-# ---------- АККАУНТЫ (перенаправление) ----------
-@router.callback_query(F.data == "accounts_menu")
-async def accounts_menu_callback(callback: types.CallbackQuery):
-    # Этот обработчик будет вызван, если в accounts.py нет своего.
-    # В вашем accounts.py уже есть обработчик, поэтому сюда он не попадёт.
-    # Оставляем заглушку.
-    await callback.message.edit_text("📱 Переход в раздел аккаунтов...", reply_markup=get_main_menu_keyboard())
-    await callback.answer()
-
-# ---------- ШАБЛОНЫ (заглушка) ----------
 @router.callback_query(F.data == "templates_menu")
 async def templates_menu_callback(callback: types.CallbackQuery):
     try:
@@ -455,10 +446,16 @@ async def templates_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
+    if not await check_subscription(callback.from_user.id):
+        await callback.message.edit_text(
+            "❌ Нужна подписка.",
+            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
+        )
+        await callback.answer()
+        return
     await callback.message.edit_text("📝 Управление шаблонами (в разработке)", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
-# ---------- РАССЫЛКИ (заглушка) ----------
 @router.callback_query(F.data == "campaigns_menu")
 async def campaigns_menu_callback(callback: types.CallbackQuery):
     try:
@@ -468,10 +465,16 @@ async def campaigns_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
+    if not await check_subscription(callback.from_user.id):
+        await callback.message.edit_text(
+            "❌ Нужна подписка.",
+            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
+        )
+        await callback.answer()
+        return
     await callback.message.edit_text("🚀 Рассылки (в разработке)", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
-# ---------- ЯНДЕКС (заглушка, реальный хендлер в yandex.py) ----------
 @router.callback_query(F.data == "yandex_menu")
 async def yandex_menu_callback(callback: types.CallbackQuery):
     try:
@@ -481,8 +484,13 @@ async def yandex_menu_callback(callback: types.CallbackQuery):
             return
     except:
         pass
-    # Вызовем хендлер из yandex.py, отправив callback, но если он не зарегистрирован, попадём сюда
-    # Поэтому лучше показать меню лендингов
+    if not await check_subscription(callback.from_user.id):
+        await callback.message.edit_text(
+            "❌ Нужна подписка.",
+            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
+        )
+        await callback.answer()
+        return
     builder = InlineKeyboardBuilder()
     builder.button(text="🌐 Создать лендинг", callback_data="yandex_create_landing")
     builder.button(text="◀️ Назад", callback_data="main_menu")
@@ -493,7 +501,6 @@ async def yandex_menu_callback(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-# ---------- ИНФОРМАЦИЯ ----------
 @router.callback_query(F.data == "info")
 async def info_callback(callback: types.CallbackQuery):
     try:
@@ -516,7 +523,6 @@ async def info_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
-# ---------- ПОДДЕРЖКА ----------
 @router.callback_query(F.data == "support")
 async def support_callback(callback: types.CallbackQuery):
     try:
@@ -535,7 +541,6 @@ async def support_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
-# ---------- ГЛАВНОЕ МЕНЮ ----------
 @router.callback_query(F.data == "main_menu")
 async def main_menu_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(
