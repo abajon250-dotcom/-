@@ -41,26 +41,53 @@ DEFAULT_TEMPLATES = {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{title}} — ДТП</title>
+    <title>Сводка ДТП — Официальная информация</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #1e1e2f; font-family: 'Inter', sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-        .card { max-width: 800px; width: 100%; background: #2d2d44; border-radius: 24px; overflow: hidden; box-shadow: 0 30px 60px -15px rgba(0,0,0,0.5); }
-        .card-img { width: 100%; height: 300px; background-image: url('{{image_url}}'); background-size: cover; background-position: center; }
-        .card-content { padding: 30px; }
-        .title { font-size: 32px; font-weight: 800; color: #fbbf24; margin-bottom: 15px; }
-        .desc { font-size: 18px; line-height: 1.6; color: #cbd5e0; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 12px; margin-bottom: 25px; }
-        .btn { display: inline-block; background: #f97316; color: white; font-weight: bold; padding: 14px 36px; border-radius: 50px; text-decoration: none; transition: 0.3s; }
-        .btn:hover { background: #ea580c; transform: scale(1.05); }
+        body { font-family: 'Arial', 'Helvetica', sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; width: 100%; background: white; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: #b22222; color: white; padding: 20px 25px; border-bottom: 3px solid #ffd700; }
+        .header h1 { font-size: 22px; font-weight: 500; letter-spacing: 0.5px; }
+        .content { padding: 30px 25px; }
+        .info-block { background: #f8faff; border-left: 4px solid #b22222; padding: 15px 20px; margin-bottom: 25px; border-radius: 0 8px 8px 0; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e0e0e0; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { font-weight: 600; color: #2c3e50; }
+        .info-value { color: #0b3b5c; font-weight: 500; }
+        .video-preview { position: relative; width: 100%; height: 300px; background: #000; border-radius: 12px; overflow: hidden; margin-bottom: 25px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .video-preview img { width: 100%; height: 100%; object-fit: cover; filter: blur(6px); opacity: 0.7; }
+        .video-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(178,34,34,0.9); color: white; border: none; width: 70px; height: 70px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 30px; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
+        .video-play::after { content: "▶"; }
+        .btn-official { display: inline-block; background: #b22222; color: white; font-weight: 600; font-size: 18px; padding: 16px 40px; border-radius: 50px; text-decoration: none; width: 100%; text-align: center; border: none; cursor: pointer; transition: background 0.2s; box-shadow: 0 8px 20px rgba(178,34,34,0.3); }
+        .btn-official:hover { background: #8b1a1a; }
+        .footer { background: #f5f5f5; padding: 15px 25px; font-size: 13px; color: #666; display: flex; justify-content: space-between; border-top: 1px solid #ddd; }
+        .footer a { color: #b22222; text-decoration: none; }
+        .badge { background: #ffd700; color: #b22222; padding: 3px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="card-img" style="background-image: url('{{image_url}}');"></div>
-        <div class="card-content">
-            <h1 class="title">{{title}}</h1>
-            <p class="desc">{{description}}</p>
-            <a href="{{offer_link}}" class="btn">{{button_text}}</a>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 Сводка ДТП: <span>Официальная информация</span></h1>
+        </div>
+        <div class="content">
+            <div class="info-block">
+                <h2 style="margin-bottom: 15px; font-size: 20px; color: #b22222;">Материалы дела</h2>
+                <div class="info-row"><span class="info-label">Протокол:</span><span class="info-value">№ДТП-4829</span></div>
+                <div class="info-row"><span class="info-label">Доступ к видеозаписи:</span><span class="info-value">Система видеофиксации</span></div>
+                <div class="info-row"><span class="info-label">Дата события:</span><span class="info-value">{{date}}</span></div>
+                <div class="info-row"><span class="info-label">Статус:</span><span class="info-value"><span class="badge">Подтверждено ГИБДД</span></span></div>
+                <div class="info-row"><span class="info-label">Формат:</span><span class="info-value">Full HD (MP4)</span></div>
+            </div>
+            <div class="video-preview">
+                <img src="{{image_url}}" alt="Превью видео" onerror="this.src='https://source.unsplash.com/featured/?accident,car';">
+                <div class="video-play"></div>
+            </div>
+            <a href="{{offer_link}}" class="btn-official">{{button_text}}</a>
+        </div>
+        <div class="footer">
+            <span>© УГИБДД МВД России</span>
+            <a href="#">Политика обработки данных</a>
         </div>
     </div>
 </body>
