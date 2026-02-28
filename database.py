@@ -3,7 +3,7 @@ import json
 import aiosqlite
 from datetime import datetime
 
-DB_NAME = "/data/spam_bot.db"
+DB_NAME = "spam_bot.db"
 
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
