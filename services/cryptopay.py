@@ -14,7 +14,7 @@ def create_invoice(amount_usd: float, description: str = "Подписка"):
         "amount": str(amount_usd),
         "description": description,
         "paid_btn_name": "openBot",
-        "paid_btn_url": "https://t.me/sjkgsjdfshdjbot",  # можете оставить своего бота
+        "paid_btn_url": "https://t.me/sjkgsjdfshdjbot",  # замените на своего бота
         "allow_comments": False,
         "allow_anonymous": False
     }

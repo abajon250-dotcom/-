@@ -381,7 +381,7 @@ async def unblock_user(user_id: int):
         await db.execute("UPDATE users SET is_blocked=0 WHERE user_id=?", (user_id,))
         await db.commit()
 
-# ---------- Статистика ----------
+# ---------- Статистика пользователей ----------
 async def get_users_count() -> int:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("SELECT COUNT(*) FROM users")
@@ -393,6 +393,7 @@ async def get_inactive_users_count() -> int:
     active = await get_active_subscriptions_count()
     return total - active
 
+# ---------- Статистика транзакций ----------
 async def get_replenishments_stats() -> dict:
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute(
@@ -419,12 +420,3 @@ async def get_all_users() -> list:
         cursor = await db.execute("SELECT user_id FROM users")
         rows = await cursor.fetchall()
         return [{"user_id": r[0]} for r in rows]
-
-    async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
-        async with aiosqlite.connect(DB_NAME) as db:
-            cursor = await db.execute(
-                "SELECT id, credentials FROM accounts WHERE user_id=? AND platform=?",
-                (user_id, platform)
-            )
-            rows = await cursor.fetchall()
-            return [{"id": r[0], "credentials": json.loads(r[1])} for r in rows]
