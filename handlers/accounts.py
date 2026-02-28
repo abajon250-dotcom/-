@@ -8,7 +8,7 @@ from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
 from handlers.common import get_nav_keyboard
-from handlers.payment import get_accounts_reply_keyboard, check_subscription, get_main_menu_keyboard
+from handlers.payment import get_accounts_reply_keyboard, check_subscription
 
 router = Router()
 
@@ -45,7 +45,6 @@ async def accounts_menu_callback(callback: types.CallbackQuery):
     else:
         text = "📱 У вас пока нет подключённых аккаунтов."
 
-    # Удаляем старое сообщение (главное меню) и отправляем новое с reply-клавиатурой
     await callback.message.delete()
     await callback.message.answer(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
     await callback.answer()
@@ -103,7 +102,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
-    # MAX – упрощённая авторизация без кода
     if platform == "max":
         await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
@@ -113,7 +111,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
         return
 
     try:
-        # Создаём экземпляр авторизации
         if platform == "telegram":
             auth = TelegramAuth(phone)
         elif platform == "vk":
@@ -123,17 +120,12 @@ async def phone_entered(message: types.Message, state: FSMContext):
             await state.clear()
             return
 
-        # Отправляем код и получаем результат:
-        # True – уже авторизован (есть рабочая сессия)
-        # False – код отправлен, требуется ввод
-        result = await auth.send_code()
+        result = await auth.send_code()  # True – уже авторизован, False – код отправлен
 
         if result is True:
-            # Уже авторизован – сразу финализируем
             await finalize_login(message, state, auth, platform)
             return
         else:
-            # Код отправлен – переходим к вводу кода
             await state.update_data(auth_instance=auth, phone=phone)
             builder = InlineKeyboardBuilder()
             builder.button(text="◀️ Назад", callback_data="back_to_phone")
@@ -146,7 +138,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
             await state.set_state(AddAccountState.waiting_for_code)
 
     except Exception as e:
-        # Если возникла ошибка при отправке кода (например, floodwait)
         await message.answer(f"❌ Ошибка: {e}")
         await state.clear()
 
