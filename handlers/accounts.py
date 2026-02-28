@@ -46,7 +46,13 @@ async def accounts_menu_callback(callback: types.CallbackQuery):
     else:
         text = "📱 У вас пока нет подключённых аккаунтов."
 
-    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
+    # Удаляем старое сообщение (главное меню) и отправляем новое с reply-клавиатурой
+    await callback.message.delete()
+    await callback.message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_accounts_reply_keyboard()
+    )
     await callback.answer()
 
 # ----- Рабочий Telegram -----
