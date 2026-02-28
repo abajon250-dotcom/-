@@ -57,8 +57,6 @@ class TelegramAuth:
             return "2fa_required"
         except PhoneCodeExpiredError:
             raise Exception("Код подтверждения истёк. Запросите новый код.")
-        except CodeExpiredError:
-            raise Exception("Код истёк. Запросите новый код.")
         except Exception as e:
             raise e
 

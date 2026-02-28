@@ -31,7 +31,6 @@ from config import ADMIN_IDS
 
 router = Router()
 
-# ================== ТАРИФЫ ПОДПИСКИ ==================
 SUBSCRIPTION_TARIFFS = {
     "1day":   {"price": 1.5,  "days": 1,   "label": "1 день"},
     "week":   {"price": 10.0, "days": 7,   "label": "Неделя"},
@@ -47,7 +46,6 @@ class PaymentState(StatesGroup):
     choosing_method = State()
     waiting_for_payment = State()
 
-# ================== КЛАВИАТУРЫ ==================
 def get_main_menu_keyboard():
     builder = InlineKeyboardBuilder()
     builder.button(text="👤 Профиль", callback_data="profile")
@@ -59,7 +57,7 @@ def get_main_menu_keyboard():
     builder.button(text="🌐 Яндекс", callback_data="yandex_menu")
     builder.button(text="ℹ️ Информация", callback_data="info")
     builder.button(text="📞 Поддержка", callback_data="support")
-    builder.button(text="📢 Наш канал", url="https://t.me/ваш_канал")  # замените на реальную ссылку
+    builder.button(text="📢 Наш канал", url="https://t.me/ваш_канал")
     builder.adjust(2, 2, 3, 2, 1)
     return builder.as_markup()
 
@@ -71,7 +69,6 @@ def get_accounts_reply_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
-# ================== ПРОВЕРКА ПОДПИСКИ ==================
 async def check_subscription(user_id: int) -> bool:
     if user_id in ADMIN_IDS:
         return True
@@ -90,7 +87,6 @@ async def check_subscription(user_id: int) -> bool:
         pass
     return False
 
-# ================== ОБРАБОТЧИКИ ==================
 @router.callback_query(F.data == "profile")
 async def profile_callback(callback: types.CallbackQuery):
     try:
@@ -438,7 +434,6 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await callback.answer(f"❌ Ошибка при проверке: {e}", show_alert=True)
 
-# ----- Заглушки для остальных кнопок (шаблоны, рассылки, лендинги) -----
 @router.callback_query(F.data == "templates_menu")
 async def templates_menu_callback(callback: types.CallbackQuery):
     if not await check_subscription(callback.from_user.id):

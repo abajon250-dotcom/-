@@ -74,14 +74,11 @@ async def max_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
         await message.answer("🚫 Вы заблокированы.")
         return
-    await state.update_data(platform="max")
-    await message.answer(
-        "Введи номер телефона для MAX (например, +79001234567):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(AddAccountState.phone)
+    await message.answer("📱 Добавление MAX‑аккаунта пока в разработке. Скоро появится!")
+    from handlers.start import cmd_start
+    await cmd_start(message)
 
-# ----- Ввод номера (общий) -----
+# ----- Ввод номера (общий для Telegram и VK) -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -98,46 +95,25 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
-    # MAX добавляется сразу без подтверждения
-    if platform == "max":
-        await add_account(message.from_user.id, platform, {"phone": phone})
-        await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
+    if platform == "telegram":
+        auth = TelegramAuth(phone)
+    elif platform == "vk":
+        auth = VkAuth(phone)
+    else:
+        await message.answer("❌ Неподдерживаемая платформа")
         await state.clear()
-        from handlers.start import cmd_start
-        await cmd_start(message)
         return
 
     try:
-        if platform == "telegram":
-            auth = TelegramAuth(phone)
-            await auth.send_code()
-        elif platform == "vk":
-            auth = VkAuth(phone)
-            await auth.send_code()  # может выбросить исключение или просто пройти, если сессия есть
-        else:
-            await message.answer("❌ Неизвестная платформа")
-            return
-
-        # Если после send_code уже авторизованы (например, есть сессия)
-        if platform == "vk" and auth.vk is not None:
-            await finalize_login(message, state, auth, platform)
-            return
-
-        await state.update_data(auth_instance=auth, phone=phone)
-        builder = InlineKeyboardBuilder()
-        builder.button(text="◀️ Назад", callback_data="back_to_phone")
-        builder.button(text="🚫 Отмена", callback_data="cancel")
-        builder.adjust(1)
-        await message.answer(
-            "На твой телефон отправлен код. Введи его цифрами:",
-            reply_markup=builder.as_markup()
-        )
-        await state.set_state(AddAccountState.waiting_for_code)
-
+        # Попытка авторизации (может потребовать код или сразу пройти)
+        await auth.send_code()
+        # Если дошли сюда без исключения, значит сессия уже есть и мы авторизованы
+        await finalize_login(message, state, auth, platform)
+        return
     except Exception as e:
         error_text = str(e).lower()
-        # Если исключение говорит о необходимости кода – переходим к вводу
         if "код" in error_text or "code" in error_text or "auth" in error_text:
+            # Требуется ввод кода
             await state.update_data(auth_instance=auth, phone=phone)
             builder = InlineKeyboardBuilder()
             builder.button(text="◀️ Назад", callback_data="back_to_phone")
