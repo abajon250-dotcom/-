@@ -12,6 +12,7 @@ from database import (
 from services.telegram_sender import send_telegram_messages
 from services.vk_sender import send_vk_messages
 from handlers.common import get_nav_keyboard
+from handlers.payment import check_subscription
 from logger import log_action
 
 router = Router()
@@ -30,6 +31,13 @@ class CampaignState(StatesGroup):
 async def campaigns_menu_callback(callback: types.CallbackQuery, state: FSMContext):
     if await is_user_blocked(callback.from_user.id):
         await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
+    if not await check_subscription(callback.from_user.id):
+        await callback.message.edit_text(
+            "❌ Для использования рассылок необходима подписка.",
+            reply_markup=InlineKeyboardBuilder().button(text="💰 Купить подписку", callback_data="buy_subscription").as_markup()
+        )
         await callback.answer()
         return
     builder = InlineKeyboardBuilder()
