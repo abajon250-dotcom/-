@@ -7,8 +7,7 @@ from logger import log_action
 
 router = Router()
 
-# Ссылка на аватарку – замените на свою
-AVATAR_URL = "https://i.ibb.co/YX7pK0Q/GRSspam-logo.png"  # вставьте реальную ссылку
+AVATAR_URL = "https://i.ibb.co/YX7pK0Q/GRSspam-logo.png"  # замените на свою ссылку
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -32,7 +31,7 @@ async def cmd_start(message: types.Message):
         f"• Создание стильных лендингов с фото\n"
         f"• Подключение аккаунтов Telegram, VK, MAX\n"
         f"• Гибкая система подписок и внутренний баланс\n"
-        f"• Рассылки и шаблоны (в разработке)\n"
+        f"• Рассылки и шаблоны\n"
         f"• Поддержка 24/7\n\n"
         f"👇 <b>Выбери действие в меню ниже</b>"
     )
@@ -47,5 +46,4 @@ async def cmd_start(message: types.Message):
             reply_markup=get_main_menu_keyboard()
         )
     except Exception:
-        # Если фото не грузится – отправим текст
         await message.answer(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
