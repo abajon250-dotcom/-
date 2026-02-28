@@ -10,6 +10,7 @@ from database import (
     add_campaign, is_user_blocked, get_account
 )
 from services.telegram_sender import send_telegram_messages
+from services.vk_sender import send_vk_messages
 from handlers.common import get_nav_keyboard
 from logger import log_action
 
@@ -270,8 +271,12 @@ async def run_campaign_task(platform, account_id, text, contacts, delay_min, del
             await send_telegram_messages(session_file, api_id, api_hash, contacts, text, delay_min, delay_max)
             await notify_msg.answer("✅ Рассылка через Telegram завершена!")
         elif platform == "vk":
-            # Пока заглушка, но можно добавить VK позже
-            await notify_msg.answer("📘 Рассылки через VK пока в разработке. Скоро появится!")
+            token = account["credentials"].get("token")
+            if not token:
+                await notify_msg.answer("❌ Не найден токен VK")
+                return
+            await send_vk_messages(token, contacts, text, delay_min, delay_max)
+            await notify_msg.answer("✅ Рассылка через VK завершена!")
         elif platform == "max":
             await notify_msg.answer("📱 Рассылки через MAX пока в разработке.")
         else:

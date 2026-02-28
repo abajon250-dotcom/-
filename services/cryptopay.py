@@ -4,6 +4,8 @@ from config import CRYPTO_PAY_TOKEN
 API_URL = "https://pay.crypt.bot/api"
 
 def create_invoice(amount_usd: float, description: str = "Подписка"):
+    if not CRYPTO_PAY_TOKEN:
+        raise Exception("❌ Токен CryptoPay не задан! Добавьте CRYPTO_PAY_TOKEN в переменные окружения.")
     url = f"{API_URL}/createInvoice"
     headers = {
         "Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN,
@@ -26,6 +28,8 @@ def create_invoice(amount_usd: float, description: str = "Подписка"):
         raise Exception(f"CryptoPay error: {data}")
 
 def check_invoice(invoice_id: str):
+    if not CRYPTO_PAY_TOKEN:
+        raise Exception("❌ Токен CryptoPay не задан!")
     url = f"{API_URL}/getInvoices"
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
     params = {"invoice_ids": invoice_id}
