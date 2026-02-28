@@ -24,7 +24,7 @@ class VkAuth:
 
         self.vk_session = vk_api.VkApi(login=self.phone)
         try:
-            self.vk_session.auth(token_only=True)
+            self.vk_session.auth()
         except AuthError as e:
             raise Exception("Требуется код подтверждения")
         except Exception as e:
@@ -32,7 +32,8 @@ class VkAuth:
 
     async def check_code(self, code: str):
         try:
-            self.vk_session.auth(code=code)
+            # Передаём код как позиционный аргумент, не именованный
+            self.vk_session.auth(code)
             token = self.vk_session.token['access_token']
             with open(self.session_file, 'wb') as f:
                 pickle.dump(token, f)
@@ -47,8 +48,9 @@ class VkAuth:
             raise e
 
     async def check_2fa(self, password: str):
+        # Для двухфакторки тоже передаём пароль как аргумент
         try:
-            self.vk_session.auth(code=password)
+            self.vk_session.auth(password)
             token = self.vk_session.token['access_token']
             with open(self.session_file, 'wb') as f:
                 pickle.dump(token, f)
