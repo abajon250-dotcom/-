@@ -7,7 +7,7 @@ from logger import log_action
 
 router = Router()
 
-AVATAR_URL = "https://ibb.co/Df4bBRzz"  # замените на свою ссылку
+AVATAR_URL = "https://i.ibb.co/YX7pK0Q/GRSspam-logo.png"  # замените на свою ссылку
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):

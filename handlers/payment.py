@@ -434,6 +434,7 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await callback.answer(f"❌ Ошибка при проверке: {e}", show_alert=True)
 
+# ----- Заглушки для остальных кнопок (шаблоны, рассылки, лендинги) -----
 @router.callback_query(F.data == "templates_menu")
 async def templates_menu_callback(callback: types.CallbackQuery):
     if not await check_subscription(callback.from_user.id):

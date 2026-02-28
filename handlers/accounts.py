@@ -8,7 +8,7 @@ from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
 from logger import log_action
 from handlers.common import get_nav_keyboard
-from handlers.payment import get_accounts_reply_keyboard, check_subscription
+from handlers.payment import get_accounts_reply_keyboard, check_subscription, get_main_menu_keyboard
 
 router = Router()
 
@@ -19,7 +19,6 @@ class AddAccountState(StatesGroup):
     waiting_for_2fa = State()
     auth_instance = State()
 
-# ================== Отображение списка аккаунтов ==================
 @router.callback_query(F.data == "accounts_menu")
 async def accounts_menu_callback(callback: types.CallbackQuery):
     if await is_user_blocked(callback.from_user.id):
@@ -48,14 +47,9 @@ async def accounts_menu_callback(callback: types.CallbackQuery):
 
     # Удаляем старое сообщение (главное меню) и отправляем новое с reply-клавиатурой
     await callback.message.delete()
-    await callback.message.answer(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_accounts_reply_keyboard()
-    )
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
     await callback.answer()
 
-# ----- Рабочий Telegram -----
 @router.message(F.text == "✈️ Telegram")
 async def telegram_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -68,7 +62,6 @@ async def telegram_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Рабочий VK -----
 @router.message(F.text == "📘 VK")
 async def vk_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -81,7 +74,6 @@ async def vk_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Заглушка MAX (можно сохранить номер, но реальной авторизации нет) -----
 @router.message(F.text == "📱 MAX")
 async def max_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -94,7 +86,6 @@ async def max_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Ввод номера (общий для Telegram, VK, MAX) -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -111,7 +102,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
-    # MAX добавляется сразу без подтверждения
     if platform == "max":
         await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
@@ -137,7 +127,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
             await finalize_login(message, state, auth, platform)
             return
 
-        # Запрашиваем код
         await state.update_data(auth_instance=auth, phone=phone)
         builder = InlineKeyboardBuilder()
         builder.button(text="◀️ Назад", callback_data="back_to_phone")
@@ -152,7 +141,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
     except Exception as e:
         error_text = str(e).lower()
         if "код" in error_text or "code" in error_text or "auth" in error_text:
-            # Требуется ввод кода
             await state.update_data(auth_instance=auth, phone=phone)
             builder = InlineKeyboardBuilder()
             builder.button(text="◀️ Назад", callback_data="back_to_phone")
@@ -240,5 +228,10 @@ async def finalize_login(message: types.Message, state: FSMContext, auth, platfo
     await add_account(message.from_user.id, platform, credentials)
     await message.answer(f"✅ Аккаунт {platform} успешно добавлен!")
     await state.clear()
+    from handlers.start import cmd_start
+    await cmd_start(message)
+
+@router.message(F.text == "◀️ Назад в меню")
+async def back_to_main_menu(message: types.Message):
     from handlers.start import cmd_start
     await cmd_start(message)
