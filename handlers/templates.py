@@ -20,7 +20,6 @@ async def templates_menu_callback(callback: types.CallbackQuery):
         await callback.message.edit_text("🚫 Вы заблокированы.")
         await callback.answer()
         return
-
     builder = InlineKeyboardBuilder()
     builder.button(text="📄 Создать шаблон", callback_data="create_template")
     builder.button(text="📋 Мои шаблоны", callback_data="list_templates")
@@ -72,15 +71,11 @@ async def template_text(message: types.Message, state: FSMContext):
         await message.answer("❌ Текст не может быть пустым.")
         return
     await state.update_data(text=text)
-    # здесь можно было бы запросить медиа, но пока пропускаем
     data = await state.get_data()
     await add_template(message.from_user.id, data["name"], data["platform"], text)
     log_action(message.from_user.id, "create_template", data["name"])
     await message.answer("✅ Шаблон создан!")
     await state.clear()
-    # возврат в меню шаблонов
-    await templates_menu_callback(message)  # но message не callback, поэтому лучше отправить новое сообщение
-    # упростим: вернём главное меню
     from handlers.start import cmd_start
     await cmd_start(message)
 

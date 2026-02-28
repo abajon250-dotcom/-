@@ -6,12 +6,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import (
-    get_user_accounts_by_platform, get_templates, get_template, add_campaign, is_user_blocked,
-    get_account  # нужен для получения деталей аккаунта
+    get_user_accounts_by_platform, get_templates, get_template,
+    add_campaign, is_user_blocked, get_account
 )
 from services.telegram_sender import send_telegram_messages
 from handlers.common import get_nav_keyboard
-from config import LANDING_STORAGE_PATH  # для временных файлов
+from logger import log_action
 
 router = Router()
 
@@ -19,7 +19,7 @@ class CampaignState(StatesGroup):
     platform = State()
     account_id = State()
     template_id = State()
-    text = State()          # если без шаблона
+    text = State()
     contacts = State()
     confirm_contacts = State()
     delay_min = State()
@@ -31,7 +31,6 @@ async def campaigns_menu_callback(callback: types.CallbackQuery, state: FSMConte
         await callback.message.edit_text("🚫 Вы заблокированы.")
         await callback.answer()
         return
-
     builder = InlineKeyboardBuilder()
     builder.button(text="📱 MAX", callback_data="camp_platform_max")
     builder.button(text="✈️ Telegram", callback_data="camp_platform_telegram")
@@ -49,7 +48,6 @@ async def campaign_platform(callback: types.CallbackQuery, state: FSMContext):
     platform = callback.data.replace("camp_platform_", "")
     await state.update_data(platform=platform)
 
-    # Показываем аккаунты пользователя для этой платформы
     accounts = await get_user_accounts_by_platform(callback.from_user.id, platform)
     if not accounts:
         await callback.message.edit_text(
@@ -77,7 +75,6 @@ async def campaign_account(callback: types.CallbackQuery, state: FSMContext):
     acc_id = int(callback.data.replace("camp_acc_", ""))
     await state.update_data(account_id=acc_id)
 
-    # Показываем шаблоны пользователя для этой платформы
     data = await state.get_data()
     platform = data["platform"]
     templates = await get_templates(platform=platform, user_id=callback.from_user.id)
@@ -132,7 +129,6 @@ async def campaign_text(message: types.Message, state: FSMContext):
 async def campaign_contacts(message: types.Message, state: FSMContext, bot: Bot):
     contacts = []
     if message.document:
-        # Скачиваем CSV
         try:
             file = await bot.get_file(message.document.file_id)
             file_path = f"temp_{message.from_user.id}_{message.document.file_name}"
@@ -233,7 +229,6 @@ async def campaign_delay_max(message: types.Message, state: FSMContext):
     delay_min = data["delay_min"]
     delay_max = delay_max
 
-    # Сохраняем кампанию в БД (опционально)
     await add_campaign(
         user_id=message.from_user.id,
         platform=platform,
@@ -249,7 +244,6 @@ async def campaign_delay_max(message: types.Message, state: FSMContext):
         f"Задержка: {delay_min}-{delay_max} сек."
     )
 
-    # Запускаем в фоне
     asyncio.create_task(
         run_campaign_task(
             platform, account_id, text, contacts,
@@ -260,13 +254,12 @@ async def campaign_delay_max(message: types.Message, state: FSMContext):
 
 async def run_campaign_task(platform, account_id, text, contacts, delay_min, delay_max, notify_msg):
     try:
-        account = await get_account(account_id)  # функция из database
+        account = await get_account(account_id)
         if not account:
             await notify_msg.answer("❌ Аккаунт не найден")
             return
 
         if platform == "telegram":
-            # Получаем данные для отправки из credentials
             creds = account["credentials"]
             session_file = creds.get("session_file")
             api_id = creds.get("api_id")
@@ -277,10 +270,9 @@ async def run_campaign_task(platform, account_id, text, contacts, delay_min, del
             await send_telegram_messages(session_file, api_id, api_hash, contacts, text, delay_min, delay_max)
             await notify_msg.answer("✅ Рассылка через Telegram завершена!")
         elif platform == "vk":
-            # Заглушка
-            await notify_msg.answer("📘 Рассылки через VK пока в разработке.")
+            # Пока заглушка, но можно добавить VK позже
+            await notify_msg.answer("📘 Рассылки через VK пока в разработке. Скоро появится!")
         elif platform == "max":
-            # Заглушка
             await notify_msg.answer("📱 Рассылки через MAX пока в разработке.")
         else:
             await notify_msg.answer("❌ Неизвестная платформа")
