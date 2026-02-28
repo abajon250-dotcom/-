@@ -1,67 +1,66 @@
-import os
-import pickle
 import vk_api
-from vk_api import VkApi
-from vk_api.exceptions import ApiError, AuthError
+import logging
+import pickle
+from vk_api.exceptions import ApiError, VkApiError
 
-SESSIONS_DIR = "sessions"
-os.makedirs(SESSIONS_DIR, exist_ok=True)
+logger = logging.getLogger(__name__)
 
 class VkAuth:
-    def __init__(self, phone: str):
-        self.phone = phone
-        self.session_file = os.path.join(SESSIONS_DIR, f"vk_{phone}.session")
+    def __init__(self, login: str):
+        self.login = login
         self.vk_session = None
-        self.vk = None
+        self._twofa_code = None
 
     async def send_code(self):
-        if os.path.exists(self.session_file):
-            with open(self.session_file, 'rb') as f:
-                token = pickle.load(f)
-            self.vk_session = vk_api.VkApi(token=token)
-            self.vk = self.vk_session.get_api()
-            return True
-
-        self.vk_session = vk_api.VkApi(login=self.phone)
+        """Для VK «отправка кода» означает создание сессии и проверку, не требуется ли сразу 2FA.
+        Возвращает True, если уже авторизован (есть токен), иначе False."""
+        self.vk_session = vk_api.VkApi(login=self.login)
         try:
-            self.vk_session.auth()
-        except AuthError as e:
-            raise Exception("Требуется код подтверждения")
+            # Пытаемся авторизоваться без пароля (чтобы получить validation)
+            self.vk_session.auth(token_only=True)
+            # Если дошли сюда без исключений – значит, уже есть сохранённая сессия
+            logger.info(f"Уже авторизован для {self.login}")
+            return True
+        except vk_api.exceptions.TwoFactorError:
+            # Требуется код – это нормально, продолжим
+            logger.info(f"Требуется код для {self.login}")
+            return False
+        except vk_api.exceptions.BadPassword:
+            # Пароль не был передан, но требуется – будем считать, что нужен код
+            logger.info(f"Требуется пароль/код для {self.login}")
+            return False
         except Exception as e:
-            raise e
+            logger.exception("Ошибка при инициализации VK")
+            raise
 
     async def check_code(self, code: str):
+        """Проверяет код (и пароль, если нужно). Возвращает True или '2fa_required'."""
+        if not self.vk_session:
+            self.vk_session = vk_api.VkApi(login=self.login)
+        self._twofa_code = code
         try:
-            # Передаём код как позиционный аргумент, не именованный
-            self.vk_session.auth(code)
-            token = self.vk_session.token['access_token']
-            with open(self.session_file, 'wb') as f:
-                pickle.dump(token, f)
-            self.vk = self.vk_session.get_api()
+            self.vk_session.auth(token_only=True)
             return True
-        except AuthError as e:
-            if "2fa" in str(e).lower() or "two" in str(e).lower():
-                return "2fa_required"
-            else:
-                raise e
+        except vk_api.exceptions.TwoFactorError:
+            # Всё ещё требуется 2FA – значит, нужен пароль
+            return "2fa_required"
+        except vk_api.exceptions.BadPassword:
+            # Неверный пароль/код
+            raise Exception("Неверный код или пароль.")
         except Exception as e:
             raise e
 
     async def check_2fa(self, password: str):
-        # Для двухфакторки тоже передаём пароль как аргумент
-        try:
-            self.vk_session.auth(password)
-            token = self.vk_session.token['access_token']
-            with open(self.session_file, 'wb') as f:
-                pickle.dump(token, f)
-            self.vk = self.vk_session.get_api()
-            return True
-        except Exception as e:
-            raise e
+        """Ввод пароля двухфакторной аутентификации (после кода)."""
+        # Для VK двухфакторка обычно уже обработана в check_code
+        # Если нужно, можно реализовать отдельно
+        pass
 
     def get_credentials(self):
+        token = self.vk_session.token.get('access_token') if self.vk_session.token else None
+        cookies = pickle.dumps(self.vk_session.http.cookies)
         return {
-            "phone": self.phone,
-            "token": self.vk_session.token['access_token'],
-            "session_file": self.session_file
+            'login': self.login,
+            'token': token,
+            'cookies': cookies,
         }

@@ -91,6 +91,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
         await message.answer("🚫 Вы заблокированы.")
         return
+
     phone = message.text.strip()
     if not re.match(r'^\+\d{10,15}$', phone):
         await message.answer(
@@ -102,6 +103,7 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
+    # MAX – упрощённая авторизация без кода
     if platform == "max":
         await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
@@ -111,36 +113,27 @@ async def phone_entered(message: types.Message, state: FSMContext):
         return
 
     try:
+        # Создаём экземпляр авторизации
         if platform == "telegram":
             auth = TelegramAuth(phone)
-            await auth.send_code()
         elif platform == "vk":
             auth = VkAuth(phone)
-            await auth.send_code()
         else:
             await message.answer("❌ Неизвестная платформа")
             await state.clear()
             return
 
-        # Если после send_code уже авторизованы (есть сессия)
-        if (platform == "vk" and auth.vk is not None) or (platform == "telegram" and auth.client is not None):
+        # Отправляем код и получаем результат:
+        # True – уже авторизован (есть рабочая сессия)
+        # False – код отправлен, требуется ввод
+        result = await auth.send_code()
+
+        if result is True:
+            # Уже авторизован – сразу финализируем
             await finalize_login(message, state, auth, platform)
             return
-
-        await state.update_data(auth_instance=auth, phone=phone)
-        builder = InlineKeyboardBuilder()
-        builder.button(text="◀️ Назад", callback_data="back_to_phone")
-        builder.button(text="🚫 Отмена", callback_data="cancel")
-        builder.adjust(1)
-        await message.answer(
-            "На твой телефон отправлен код. Введи его цифрами:",
-            reply_markup=builder.as_markup()
-        )
-        await state.set_state(AddAccountState.waiting_for_code)
-
-    except Exception as e:
-        error_text = str(e).lower()
-        if "код" in error_text or "code" in error_text or "auth" in error_text:
+        else:
+            # Код отправлен – переходим к вводу кода
             await state.update_data(auth_instance=auth, phone=phone)
             builder = InlineKeyboardBuilder()
             builder.button(text="◀️ Назад", callback_data="back_to_phone")
@@ -151,9 +144,11 @@ async def phone_entered(message: types.Message, state: FSMContext):
                 reply_markup=builder.as_markup()
             )
             await state.set_state(AddAccountState.waiting_for_code)
-        else:
-            await message.answer(f"❌ Ошибка при отправке кода: {e}")
-            await state.clear()
+
+    except Exception as e:
+        # Если возникла ошибка при отправке кода (например, floodwait)
+        await message.answer(f"❌ Ошибка: {e}")
+        await state.clear()
 
 @router.callback_query(F.data == "back_to_phone", AddAccountState.waiting_for_code)
 async def back_to_phone(callback: types.CallbackQuery, state: FSMContext):
@@ -196,7 +191,7 @@ async def code_entered(message: types.Message, state: FSMContext):
         error_text = str(e)
         if "истёк" in error_text or "expired" in error_text:
             await message.answer(
-                "⏳ Код подтверждения истёк. Нажмите «Назад» и запросите код заново.",
+                "⏳ Код подтверждения истёк. Нажми «Назад» и запроси код заново.",
                 reply_markup=get_nav_keyboard(show_cancel=True)
             )
             await state.clear()
