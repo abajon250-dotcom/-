@@ -3,10 +3,9 @@ import logging
 from telethon import TelegramClient, errors
 from config import TG_API_ID, TG_API_HASH
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SESSIONS_DIR = "sessions"
+SESSIONS_DIR = "sessions/telegram"
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 class TelegramAuth:
@@ -20,20 +19,14 @@ class TelegramAuth:
         self.phone_code_hash = None
 
     async def send_code(self):
-        """Возвращает True, если уже авторизован, иначе False (код отправлен)."""
         await self.client.connect()
         if await self.client.is_user_authorized():
-            # Дополнительно проверим, что это действительно наш номер
             me = await self.client.get_me()
             if me and me.phone == self.phone:
                 logger.info(f"Уже авторизован для {self.phone}")
                 return True
             else:
-                # Сессия есть, но номер не совпадает – удаляем её
                 await self.client.log_out()
-                logger.warning(f"Сессия для другого номера, удалена")
-
-        # Отправляем код
         try:
             result = await self.client.send_code_request(self.phone)
             self.phone_code_hash = result.phone_code_hash
@@ -42,9 +35,9 @@ class TelegramAuth:
         except errors.FloodWaitError as e:
             raise Exception(f"Слишком много попыток. Подождите {e.seconds} сек.")
         except errors.PhoneNumberInvalidError:
-            raise Exception("Неверный формат номера. Используйте +79001234567.")
+            raise Exception("Неверный формат номера")
         except Exception as e:
-            logger.exception("Ошибка при отправке кода")
+            logger.exception("Ошибка отправки кода")
             raise
 
     async def check_code(self, code: str):
@@ -64,7 +57,7 @@ class TelegramAuth:
         try:
             await self.client.sign_in(password=password)
         except errors.PasswordHashInvalidError:
-            raise Exception("Неверный пароль 2FA.")
+            raise Exception("Неверный пароль 2FA")
         except Exception as e:
             raise e
 

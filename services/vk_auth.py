@@ -18,26 +18,38 @@ class VkAuth:
         self._twofa_code = None
 
     async def send_code(self):
-        def _init_and_try_auth():
+        logger.info(f"VkAuth.send_code для {self.login}")
+
+        def _init():
             vk = vk_api.VkApi(
                 login=self.login,
                 config_filename=self.config_path,
                 auth_handler=self._auth_handler_sync
             )
-            try:
-                vk.auth(token_only=True)
-                return vk, True
-            except vk_api.exceptions.TwoFactorError:
-                return vk, False
-            except vk_api.exceptions.BadPassword:
-                return vk, False
-            except Exception as e:
-                logger.exception("Ошибка при предварительной авторизации VK")
-                raise
+            return vk
 
         loop = asyncio.get_event_loop()
-        self.vk_session, result = await loop.run_in_executor(None, _init_and_try_auth)
-        return result
+        self.vk_session = await loop.run_in_executor(None, _init)
+
+        def _try_token():
+            try:
+                self.vk_session.auth(token_only=True)
+                return True
+            except vk_api.exceptions.TwoFactorError:
+                return False
+            except vk_api.exceptions.BadPassword:
+                return False
+            except Exception as e:
+                logger.exception("Ошибка при auth(token_only=True)")
+                raise
+
+        result = await loop.run_in_executor(None, _try_token)
+        if result:
+            logger.info(f"Уже авторизован по токену для {self.login}")
+            return True
+        else:
+            logger.info(f"Требуется код для {self.login}")
+            return False
 
     def _auth_handler_sync(self):
         if self._twofa_code:
@@ -45,11 +57,12 @@ class VkAuth:
         raise vk_api.exceptions.TwoFactorError("2FA required")
 
     async def check_code(self, code: str):
+        logger.info(f"VkAuth.check_code для {self.login}")
         self._twofa_code = code
         if not self.vk_session:
             await self.send_code()
 
-        def _auth_with_code():
+        def _auth():
             try:
                 self.vk_session.auth(token_only=True)
                 return True
@@ -61,25 +74,31 @@ class VkAuth:
                 raise e
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _auth_with_code)
+        return await loop.run_in_executor(None, _auth)
 
     async def check_2fa(self, password: str):
+        logger.info(f"VkAuth.check_2fa для {self.login}")
         self._twofa_code = password
         if not self.vk_session:
             await self.send_code()
 
-        def _auth_with_password():
+        def _auth():
             try:
                 self.vk_session.auth(token_only=True)
             except Exception as e:
                 raise e
 
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _auth_with_password)
+        await loop.run_in_executor(None, _auth)
 
     def get_credentials(self):
         return {
-            'phone': self.login,               # для совместимости с вашей БД (поле phone)
-            'login': self.login,                # если нужно отдельно
-            'session_file': self.config_path,   # путь к файлу сессии
+            'phone': self.login,
+            'login': self.login,
+            'session_file': self.config_path,
         }
+
+    def get_token(self):
+        if self.vk_session and self.vk_session.token:
+            return self.vk_session.token.get('access_token')
+        return None
