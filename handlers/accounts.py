@@ -1,15 +1,21 @@
 import re
+import asyncio
+import logging
 from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
 from database import add_account, get_user_accounts, is_user_blocked
 from services.telegram_auth import TelegramAuth
 from services.vk_auth import VkAuth
+from services.tg_contacts import get_tg_stats
+from services.vk_friends import get_friends_stats
 from logger import log_action
 from handlers.common import get_nav_keyboard
 from handlers.payment import get_accounts_reply_keyboard, check_subscription
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 class AddAccountState(StatesGroup):
@@ -216,41 +222,36 @@ async def twofa_entered(message: types.Message, state: FSMContext):
 
 async def finalize_login(message: types.Message, state: FSMContext, auth, platform):
     creds = auth.get_credentials()
-    db = next(get_db())
-    service = AccountService(db)
+    user_id = message.from_user.id
+
+    # Добавляем токен VK в credentials, если есть
+    if platform == "vk":
+        token = auth.get_token()
+        if token:
+            creds['token'] = token
+
+    # Сохраняем аккаунт в базу данных
+    await add_account(user_id, platform, creds)
 
     stats_text = ""
     try:
         if platform == "telegram":
-            service.add_telegram(
-                user_id=message.from_user.id,
-                phone=creds['phone'],
-                api_id=creds['api_id'],
-                api_hash=creds['api_hash'],
-                session_path=creds['session_file']
-            )
+            # Получаем статистику Telegram
             tg_stats = await get_tg_stats(creds['session_file'], creds['api_id'], creds['api_hash'])
             if tg_stats:
                 stats_text = f"\n📊 Диалогов: {tg_stats['dialogs']}, контактов: {tg_stats['contacts']}"
         elif platform == "vk":
-            token = auth.get_token()
-            service.add_vk(
-                user_id=message.from_user.id,
-                login=creds['login'],
-                session_path=creds['session_file'],
-                token=token
-            )
+            token = creds.get('token')
             if token:
+                # Получаем статистику VK (друзей)
                 vk_stats = await asyncio.to_thread(get_friends_stats, token)
                 if vk_stats:
                     stats_text = f"\n📊 Друзей: {vk_stats['total']}"
     except Exception as e:
-        logger.exception("Ошибка при сохранении или получении статистики")
-    finally:
-        db.close()
+        logger.exception("Ошибка при получении статистики")
 
     await message.answer(f"✅ Аккаунт {platform} успешно добавлен!{stats_text}")
-    log_action(message.from_user.id, "add_account", f"{platform}: {creds.get('phone', '')}")
+    log_action(user_id, "add_account", f"{platform}: {creds.get('phone', '')}")
     await state.clear()
     from handlers.start import cmd_start
     await cmd_start(message)
