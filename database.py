@@ -258,6 +258,21 @@ async def get_subscription(user_id: int):
             return {"status": row[0], "expires_at": row[1]}
         return {"status": "inactive", "expires_at": None}
 
+async def get_active_subscription(user_id: int):
+    """
+    Возвращает активную подписку пользователя (status='active' и expires_at > текущее время).
+    Возвращает словарь с ключами status и expires_at, или None, если активной подписки нет.
+    """
+    async with aiosqlite.connect(DB_NAME, timeout=30) as db:
+        cursor = await db.execute(
+            "SELECT status, expires_at FROM subscriptions WHERE user_id=? AND status='active' AND expires_at > ?",
+            (user_id, datetime.now().isoformat())
+        )
+        row = await cursor.fetchone()
+        if row:
+            return {"status": row[0], "expires_at": row[1]}
+        return None
+
 async def set_subscription(user_id: int, status: str, expires_at: str = None, payment_method: str = None):
     async with _write_lock:
         async with aiosqlite.connect(DB_NAME, timeout=30) as db:
