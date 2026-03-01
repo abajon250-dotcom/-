@@ -10,8 +10,9 @@ SESSIONS_DIR = "sessions/vk"
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 class VkAuth:
-    def __init__(self, login: str):
+    def __init__(self, login: str, proxy: dict = None):
         self.login = login
+        self.proxy = proxy
         safe_login = login.replace('+', '').replace('@', '_').replace('.', '_')
         self.config_path = os.path.join(SESSIONS_DIR, f"{safe_login}.json")
         self.vk_session = None
@@ -20,12 +21,20 @@ class VkAuth:
     async def send_code(self):
         logger.info(f"VkAuth.send_code для {self.login}")
 
+        # Принудительно удаляем старый файл сессии, если он существует (для теста)
+        # В продакшене эту строку можно закомментировать, но пока оставим для гарантии
+        if os.path.exists(self.config_path):
+            os.remove(self.config_path)
+            logger.info(f"Старая сессия удалена: {self.config_path}")
+
         def _init():
             vk = vk_api.VkApi(
                 login=self.login,
                 config_filename=self.config_path,
                 auth_handler=self._auth_handler_sync
             )
+            if self.proxy:
+                vk.http.proxies.update(self.proxy)
             return vk
 
         loop = asyncio.get_event_loop()
