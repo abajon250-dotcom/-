@@ -1,8 +1,7 @@
 import os
 import logging
 from telethon import TelegramClient, errors
-from telethon.network import ConnectionTcpMTProxy  # если используете MTProto прокси
-from config import TG_API_ID, TG_API_HASH, PROXY_CONFIG  # PROXY_CONFIG из config.py
+from config import TG_API_ID, TG_API_HASH
 
 logger = logging.getLogger(__name__)
 
@@ -10,24 +9,13 @@ SESSIONS_DIR = "sessions/telegram"
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 class TelegramAuth:
-    def __init__(self, phone: str, proxy=None):
+    def __init__(self, phone: str):
         self.phone = phone
         self.api_id = TG_API_ID
         self.api_hash = TG_API_HASH
         safe_phone = phone.replace('+', '')
         self.session_path = os.path.join(SESSIONS_DIR, safe_phone)
-
-        # Если передан прокси, подключаем через него
-        if proxy:
-            self.client = TelegramClient(
-                self.session_path,
-                self.api_id,
-                self.api_hash,
-                proxy=proxy
-            )
-        else:
-            self.client = TelegramClient(self.session_path, self.api_id, self.api_hash)
-
+        self.client = TelegramClient(self.session_path, self.api_id, self.api_hash)
         self.phone_code_hash = None
 
     async def send_code(self):
@@ -42,7 +30,7 @@ class TelegramAuth:
         try:
             result = await self.client.send_code_request(self.phone)
             self.phone_code_hash = result.phone_code_hash
-            logger.info(f"Код отправлен на {self.phone} через прокси")
+            logger.info(f"Код отправлен на {self.phone}")
             return False
         except errors.FloodWaitError as e:
             raise Exception(f"Слишком много попыток. Подождите {e.seconds} сек.")
@@ -52,14 +40,26 @@ class TelegramAuth:
             logger.exception("Ошибка отправки кода")
             raise
 
-    # остальные методы без изменений
     async def check_code(self, code: str):
-        # ... как раньше
-        pass
+        try:
+            await self.client.sign_in(self.phone, code, phone_code_hash=self.phone_code_hash)
+            return True
+        except errors.SessionPasswordNeededError:
+            return "2fa_required"
+        except errors.PhoneCodeExpiredError:
+            raise Exception("Код истёк. Запросите новый.")
+        except errors.PhoneCodeInvalidError:
+            raise Exception("Неверный код.")
+        except Exception as e:
+            raise e
 
     async def check_2fa(self, password: str):
-        # ... как раньше
-        pass
+        try:
+            await self.client.sign_in(password=password)
+        except errors.PasswordHashInvalidError:
+            raise Exception("Неверный пароль 2FA")
+        except Exception as e:
+            raise e
 
     def get_credentials(self):
         self.client.disconnect()
