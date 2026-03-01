@@ -57,7 +57,7 @@ def get_main_menu_keyboard():
     builder.button(text="🌐 Яндекс", callback_data="yandex_menu")
     builder.button(text="ℹ️ Информация", callback_data="info")
     builder.button(text="📞 Поддержка", callback_data="support")
-    builder.button(text="📢 Наш канал", url="https://t.me/ваш_канал")
+    builder.button(text="📢 Наш канал", url="https://t.me/GRSspamnovosti")
     builder.adjust(2, 2, 3, 2, 1)
     return builder.as_markup()
 
