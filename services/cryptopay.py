@@ -1,30 +1,40 @@
-import logging
-from aiocryptopay import AioCryptoPay
-from config import CRYPTOBOT_TOKEN
+import requests
+from config import CRYPTO_PAY_TOKEN
 
-logger = logging.getLogger(__name__)
+API_URL = "https://pay.crypt.bot/api"
 
-_crypto = None
+def create_invoice(amount: int, description: str = "Подписка в боте"):
+    """Создаёт счёт в CryptoBot и возвращает invoice_id и pay_url"""
+    url = f"{API_URL}/createInvoice"
+    headers = {
+        "Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "asset": "RUB",  # можно USDT, BTC и др.
+        "amount": str(amount),
+        "description": description,
+        "paid_btn_name": "openBot",
+        "paid_btn_url": "https://t.me/your_bot",  # ссылка на твоего бота
+        "allow_comments": False,
+        "allow_anonymous": False
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    data = response.json()
+    if data.get("ok"):
+        return data["result"]["invoice_id"], data["result"]["pay_url"]
+    else:
+        raise Exception(f"CryptoPay error: {data}")
 
-async def get_crypto():
-    global _crypto
-    if _crypto is None:
-        _crypto = AioCryptoPay(token=CRYPTOBOT_TOKEN)
-    return _crypto
-
-async def create_invoice(amount: float, description: str = ""):
-    crypto = await get_crypto()
-    invoice = await crypto.create_invoice(
-        asset='USDT',
-        amount=amount,
-        description=description
-    )
-    logger.info(f"Invoice created: {invoice.invoice_id}")
-    return str(invoice.invoice_id), invoice.pay_url
-
-async def check_invoice(invoice_id: str):
-    crypto = await get_crypto()
-    invoices = await crypto.get_invoices(invoice_ids=int(invoice_id))
-    if invoices:
-        return invoices[0].status
-    return "not_found"
+def check_invoice(invoice_id: str):
+    """Проверяет статус счёта"""
+    url = f"{API_URL}/getInvoices"
+    headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
+    params = {"invoice_ids": invoice_id}
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json()
+    if data.get("ok") and data["result"]["items"]:
+        status = data["result"]["items"][0]["status"]
+        # status может быть "active", "paid", "expired"
+        return status
+    return None
