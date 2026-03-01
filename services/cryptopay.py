@@ -3,19 +3,18 @@ from config import CRYPTO_PAY_TOKEN
 
 API_URL = "https://pay.crypt.bot/api"
 
-def create_invoice(amount: int, description: str = "Подписка в боте"):
-    """Создаёт счёт в CryptoBot и возвращает invoice_id и pay_url"""
+def create_invoice(amount_usd: float, description: str = "Подписка"):
     url = f"{API_URL}/createInvoice"
     headers = {
         "Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN,
         "Content-Type": "application/json"
     }
     payload = {
-        "asset": "RUB",  # можно USDT, BTC и др.
-        "amount": str(amount),
+        "asset": "USDT",
+        "amount": str(amount_usd),
         "description": description,
         "paid_btn_name": "openBot",
-        "paid_btn_url": "https://t.me/your_bot",  # ссылка на твоего бота
+        "paid_btn_url": "https://t.me/sjkgsjdfshdjbot",  # можете оставить своего бота
         "allow_comments": False,
         "allow_anonymous": False
     }
@@ -27,14 +26,11 @@ def create_invoice(amount: int, description: str = "Подписка в боте
         raise Exception(f"CryptoPay error: {data}")
 
 def check_invoice(invoice_id: str):
-    """Проверяет статус счёта"""
     url = f"{API_URL}/getInvoices"
     headers = {"Crypto-Pay-API-Token": CRYPTO_PAY_TOKEN}
     params = {"invoice_ids": invoice_id}
     response = requests.get(url, headers=headers, params=params)
     data = response.json()
     if data.get("ok") and data["result"]["items"]:
-        status = data["result"]["items"][0]["status"]
-        # status может быть "active", "paid", "expired"
-        return status
+        return data["result"]["items"][0]["status"]
     return None
