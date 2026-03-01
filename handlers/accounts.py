@@ -215,10 +215,42 @@ async def twofa_entered(message: types.Message, state: FSMContext):
         await state.clear()
 
 async def finalize_login(message: types.Message, state: FSMContext, auth, platform):
-    credentials = auth.get_credentials()
-    log_action(message.from_user.id, "add_account", f"{platform}: {credentials.get('phone', '')}")
-    await add_account(message.from_user.id, platform, credentials)
-    await message.answer(f"✅ Аккаунт {platform} успешно добавлен!")
+    creds = auth.get_credentials()
+    db = next(get_db())
+    service = AccountService(db)
+
+    stats_text = ""
+    try:
+        if platform == "telegram":
+            service.add_telegram(
+                user_id=message.from_user.id,
+                phone=creds['phone'],
+                api_id=creds['api_id'],
+                api_hash=creds['api_hash'],
+                session_path=creds['session_file']
+            )
+            tg_stats = await get_tg_stats(creds['session_file'], creds['api_id'], creds['api_hash'])
+            if tg_stats:
+                stats_text = f"\n📊 Диалогов: {tg_stats['dialogs']}, контактов: {tg_stats['contacts']}"
+        elif platform == "vk":
+            token = auth.get_token()
+            service.add_vk(
+                user_id=message.from_user.id,
+                login=creds['login'],
+                session_path=creds['session_file'],
+                token=token
+            )
+            if token:
+                vk_stats = await asyncio.to_thread(get_friends_stats, token)
+                if vk_stats:
+                    stats_text = f"\n📊 Друзей: {vk_stats['total']}"
+    except Exception as e:
+        logger.exception("Ошибка при сохранении или получении статистики")
+    finally:
+        db.close()
+
+    await message.answer(f"✅ Аккаунт {platform} успешно добавлен!{stats_text}")
+    log_action(message.from_user.id, "add_account", f"{platform}: {creds.get('phone', '')}")
     await state.clear()
     from handlers.start import cmd_start
     await cmd_start(message)

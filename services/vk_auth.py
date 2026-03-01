@@ -21,8 +21,7 @@ class VkAuth:
     async def send_code(self):
         logger.info(f"VkAuth.send_code для {self.login}")
 
-        # Принудительно удаляем старый файл сессии, если он существует (для теста)
-        # В продакшене эту строку можно закомментировать, но пока оставим для гарантии
+        # Принудительно удаляем старую сессию – чтобы всегда запрашивать код для нового номера
         if os.path.exists(self.config_path):
             os.remove(self.config_path)
             logger.info(f"Старая сессия удалена: {self.config_path}")

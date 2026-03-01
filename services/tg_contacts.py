@@ -4,11 +4,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 async def get_tg_stats(session_file, api_id, api_hash):
-    """
-    Возвращает статистику по аккаунту Telegram:
-    - dialogs: количество диалогов
-    - contacts: количество контактов
-    """
     client = TelegramClient(session_file, api_id, api_hash)
     await client.connect()
     try:
