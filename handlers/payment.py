@@ -254,7 +254,6 @@ async def pay_with_cryptobot(callback: types.CallbackQuery, state: FSMContext):
 
     try:
         invoice_id, pay_url = await create_crypto_invoice(price, f"Подписка {tariff} user {user_id}")
-        # invoice_id приходит строкой, как мы сделали в cryptopay
     except Exception as e:
         await callback.message.edit_text(f"❌ Ошибка при создании счёта: {e}")
         await state.clear()
@@ -290,7 +289,7 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
     days = data["days"]
     user_id = callback.from_user.id
     try:
-        status = await check_crypto_invoice(invoice_id)  # invoice_id строка, внутри преобразуется в int
+        status = await check_crypto_invoice(invoice_id)
         if status == "paid":
             expires_at = datetime.now() + timedelta(days=days)
             await set_subscription(user_id, "active", expires_at.isoformat(), method)
