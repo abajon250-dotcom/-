@@ -19,7 +19,6 @@ class AddAccountState(StatesGroup):
     waiting_for_2fa = State()
     auth_instance = State()
 
-# ================== Отображение списка аккаунтов ==================
 @router.callback_query(F.data == "accounts_menu")
 async def accounts_menu_callback(callback: types.CallbackQuery):
     if await is_user_blocked(callback.from_user.id):
@@ -49,7 +48,6 @@ async def accounts_menu_callback(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_accounts_reply_keyboard())
     await callback.answer()
 
-# ----- Рабочий Telegram -----
 @router.message(F.text == "✈️ Telegram")
 async def telegram_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -62,7 +60,6 @@ async def telegram_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Рабочий VK -----
 @router.message(F.text == "📘 VK")
 async def vk_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -75,7 +72,6 @@ async def vk_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Заглушка MAX (можно сохранить номер, но реальной авторизации нет) -----
 @router.message(F.text == "📱 MAX")
 async def max_account_start(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -88,7 +84,6 @@ async def max_account_start(message: types.Message, state: FSMContext):
     )
     await state.set_state(AddAccountState.phone)
 
-# ----- Ввод номера (общий для Telegram, VK, MAX) -----
 @router.message(AddAccountState.phone)
 async def phone_entered(message: types.Message, state: FSMContext):
     if await is_user_blocked(message.from_user.id):
@@ -105,7 +100,6 @@ async def phone_entered(message: types.Message, state: FSMContext):
     data = await state.get_data()
     platform = data["platform"]
 
-    # MAX добавляется сразу без подтверждения
     if platform == "max":
         await add_account(message.from_user.id, platform, {"phone": phone})
         await message.answer("✅ Аккаунт MAX добавлен. Убедись, что устройство подключено и приложение авторизовано.")
@@ -122,16 +116,10 @@ async def phone_entered(message: types.Message, state: FSMContext):
             auth = VkAuth(phone)
             await auth.send_code()
         else:
-            await message.answer("❌ Неизвестная платформа")
+            await message.answer("❌ Неподдерживаемая платформа")
             await state.clear()
             return
 
-        # Если после send_code уже авторизованы (есть сессия)
-        if (platform == "vk" and auth.vk is not None) or (platform == "telegram" and auth.client is not None):
-            await finalize_login(message, state, auth, platform)
-            return
-
-        # Запрашиваем код
         await state.update_data(auth_instance=auth, phone=phone)
         builder = InlineKeyboardBuilder()
         builder.button(text="◀️ Назад", callback_data="back_to_phone")
@@ -142,11 +130,9 @@ async def phone_entered(message: types.Message, state: FSMContext):
             reply_markup=builder.as_markup()
         )
         await state.set_state(AddAccountState.waiting_for_code)
-
     except Exception as e:
         error_text = str(e).lower()
-        if "код" in error_text or "code" in error_text or "auth" in error_text:
-            # Требуется ввод кода
+        if "код" in error_text or "code" in error_text:
             await state.update_data(auth_instance=auth, phone=phone)
             builder = InlineKeyboardBuilder()
             builder.button(text="◀️ Назад", callback_data="back_to_phone")
