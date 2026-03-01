@@ -422,3 +422,20 @@ async def get_subscription_purchases_stats() -> dict:
         count = row[0] or 0
         total = row[1] or 0.0
         return {"count": count, "total": total}
+
+    async def get_all_users():
+        """
+        Возвращает список всех пользователей.
+        Предполагается, что используется SQLAlchemy и есть модель User.
+        """
+        from models.user import User  # если модель называется иначе, исправьте
+        from sqlalchemy.orm import Session
+        from database import SessionLocal  # если у вас есть такая зависимость
+
+        db = SessionLocal()
+        try:
+            users = db.query(User).all()
+            # Вернуть можно список словарей или объектов – как удобно в admin.py
+            return users
+        finally:
+            db.close()
