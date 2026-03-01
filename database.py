@@ -130,7 +130,6 @@ async def get_user_accounts(user_id: int) -> list:
         rows = await cursor.fetchall()
         return [{"id": r[0], "platform": r[1], "credentials": json.loads(r[2]), "status": r[3]} for r in rows]
 
-# ---------- НОВАЯ ФУНКЦИЯ ----------
 async def get_user_accounts_by_platform(user_id: int, platform: str) -> list:
     """Возвращает список аккаунтов пользователя для конкретной платформы."""
     async with aiosqlite.connect(DB_NAME) as db:
@@ -423,19 +422,23 @@ async def get_subscription_purchases_stats() -> dict:
         total = row[1] or 0.0
         return {"count": count, "total": total}
 
-    async def get_all_users():
-        """
-        Возвращает список всех пользователей.
-        Предполагается, что используется SQLAlchemy и есть модель User.
-        """
-        from models.user import User  # если модель называется иначе, исправьте
-        from sqlalchemy.orm import Session
-        from database import SessionLocal  # если у вас есть такая зависимость
-
-        db = SessionLocal()
-        try:
-            users = db.query(User).all()
-            # Вернуть можно список словарей или объектов – как удобно в admin.py
-            return users
-        finally:
-            db.close()
+# ---------- НОВАЯ ФУНКЦИЯ ДЛЯ АДМИНКИ ----------
+async def get_all_users() -> list:
+    """
+    Возвращает список всех пользователей из таблицы users.
+    Каждый элемент списка — словарь с данными пользователя.
+    """
+    async with aiosqlite.connect(DB_NAME) as db:
+        cursor = await db.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in await cursor.fetchall()]
+        if not columns:
+            return []
+        cols_str = ", ".join(columns)
+        cursor = await db.execute(f"SELECT {cols_str} FROM users ORDER BY user_id")
+        rows = await cursor.fetchall()
+        users = []
+        for row in rows:
+            user_dict = dict(zip(columns, row))
+            # Преобразуем дату в строку, если нужно (datetime уже строка в SQLite)
+            users.append(user_dict)
+        return users
