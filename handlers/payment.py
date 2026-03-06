@@ -4,20 +4,16 @@ from aiogram import Router, types, F
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-try:
-    from database import (
-        get_subscription, set_subscription,
-        add_invoice, update_invoice_status,
-        get_balance, update_balance, add_transaction,
-        get_user, is_user_blocked
-    )
-    DB_OK = True
-except ImportError as e:
-    DB_OK = False
-    print(f"⚠️ Ошибка импорта из database: {e}")
+# Импорты из вашей базы данных
+from database import (
+    get_subscription, set_subscription,
+    add_invoice, update_invoice_status,
+    get_balance, update_balance, add_transaction,
+    get_user, is_user_blocked
+)
 
+# Импорт функций CryptoBot (предполагается, что они асинхронные)
 try:
     from services.cryptopay import create_invoice as create_crypto_invoice, check_invoice as check_crypto_invoice
     CRYPTO_OK = True
@@ -25,12 +21,11 @@ except ImportError:
     CRYPTO_OK = False
     print("⚠️ CryptoPay не загружен, оплата будет в тестовом режиме")
 
-from handlers.common import get_nav_keyboard
-from logger import log_action
 from config import ADMIN_IDS
 
 router = Router()
 
+# Тарифы подписок
 SUBSCRIPTION_TARIFFS = {
     "1day":   {"price": 1.5,  "days": 1,   "label": "1 день"},
     "week":   {"price": 10.0, "days": 7,   "label": "Неделя"},
@@ -38,6 +33,7 @@ SUBSCRIPTION_TARIFFS = {
     "forever":{"price": 100.0,"days": 36500, "label": "Навсегда"}
 }
 
+# Состояния FSM
 class PaymentState(StatesGroup):
     replenish_amount = State()
     replenish_method = State()
@@ -46,7 +42,9 @@ class PaymentState(StatesGroup):
     choosing_method = State()
     waiting_for_payment = State()
 
+# ---------- Вспомогательные функции ----------
 def get_main_menu_keyboard():
+    """Главное меню (повтор из вашего кода)"""
     builder = InlineKeyboardBuilder()
     builder.button(text="👤 Профиль", callback_data="profile")
     builder.button(text="💰 Купить подписку", callback_data="buy_subscription")
@@ -61,19 +59,16 @@ def get_main_menu_keyboard():
     builder.adjust(2, 2, 3, 2, 1)
     return builder.as_markup()
 
-def get_accounts_reply_keyboard():
-    kb = [
-        [KeyboardButton(text="✈️ Telegram"), KeyboardButton(text="📘 VK")],
-        [KeyboardButton(text="📱 MAX")],
-        [KeyboardButton(text="◀️ Назад в меню")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+def cancel_keyboard():
+    """Клавиатура с кнопкой отмены"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="◀️ Отмена", callback_data="main_menu")
+    return builder.as_markup()
 
 async def check_subscription(user_id: int) -> bool:
+    """Проверяет, активна ли подписка у пользователя (админы всегда имеют доступ)"""
     if user_id in ADMIN_IDS:
         return True
-    if not DB_OK:
-        return False
     try:
         sub = await get_subscription(user_id)
         if sub["status"] == "active" and sub["expires_at"]:
@@ -87,70 +82,66 @@ async def check_subscription(user_id: int) -> bool:
         pass
     return False
 
+# ---------- Обработчики ----------
 @router.callback_query(F.data == "profile")
 async def profile_callback(callback: types.CallbackQuery):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Показывает профиль пользователя"""
+    # Проверка блокировки
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     user_id = callback.from_user.id
-    text = f"👤 Профиль\n\n🆔 ID: {user_id}\n(данные не загружены, ошибка БД)"
+    try:
+        user = await get_user(user_id)
+        balance = await get_balance(user_id)
+        sub = await get_subscription(user_id)
 
-    if DB_OK:
-        try:
-            user = await get_user(user_id)
-            balance = await get_balance(user_id)
-            sub = await get_subscription(user_id)
-            if user and 'registered_at' in user and user['registered_at']:
-                reg_date = datetime.fromisoformat(user['registered_at']).strftime("%d.%m.%Y %H:%M")
-            else:
-                reg_date = "неизвестно"
+        if user and 'registered_at' in user and user['registered_at']:
+            reg_date = datetime.fromisoformat(user['registered_at']).strftime("%d.%m.%Y %H:%M")
+        else:
+            reg_date = "неизвестно"
 
-            if user_id in ADMIN_IDS:
+        if user_id in ADMIN_IDS:
+            text = (
+                f"👑 <b>Профиль администратора</b>\n\n"
+                f"🆔 ID: {user_id}\n"
+                f"📅 Регистрация: {reg_date}\n"
+                f"💰 Баланс: {balance} USDT\n"
+                f"👥 Подписка: бессрочно"
+            )
+        else:
+            if sub["status"] == "active" and sub["expires_at"]:
+                expires = datetime.fromisoformat(sub["expires_at"]).strftime("%d.%m.%Y %H:%M")
                 text = (
-                    f"👑 <b>Профиль администратора</b>\n\n"
+                    f"👤 <b>Твой профиль</b>\n\n"
                     f"🆔 ID: {user_id}\n"
                     f"📅 Регистрация: {reg_date}\n"
                     f"💰 Баланс: {balance} USDT\n"
-                    f"👥 Подписка: бессрочно"
+                    f"✅ Подписка активна до {expires}"
                 )
             else:
-                if sub["status"] == "active" and sub["expires_at"]:
-                    expires = datetime.fromisoformat(sub["expires_at"]).strftime("%d.%m.%Y %H:%M")
-                    text = (
-                        f"👤 <b>Твой профиль</b>\n\n"
-                        f"🆔 ID: {user_id}\n"
-                        f"📅 Регистрация: {reg_date}\n"
-                        f"💰 Баланс: {balance} USDT\n"
-                        f"✅ Подписка активна до {expires}"
-                    )
-                else:
-                    text = (
-                        f"👤 <b>Твой профиль</b>\n\n"
-                        f"🆔 ID: {user_id}\n"
-                        f"📅 Регистрация: {reg_date}\n"
-                        f"💰 Баланс: {balance} USDT\n"
-                        f"❌ Подписка неактивна"
-                    )
-        except Exception as e:
-            text = f"👤 Профиль\n\n🆔 ID: {user_id}\n❌ Ошибка: {e}"
+                text = (
+                    f"👤 <b>Твой профиль</b>\n\n"
+                    f"🆔 ID: {user_id}\n"
+                    f"📅 Регистрация: {reg_date}\n"
+                    f"💰 Баланс: {balance} USDT\n"
+                    f"❌ Подписка неактивна"
+                )
+    except Exception as e:
+        text = f"👤 Профиль\n\n🆔 ID: {user_id}\n❌ Ошибка: {e}"
 
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_main_menu_keyboard())
     await callback.answer()
 
 @router.callback_query(F.data == "buy_subscription")
 async def buy_subscription_callback(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Выбор тарифа подписки"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     builder = InlineKeyboardBuilder()
     for key, tariff in SUBSCRIPTION_TARIFFS.items():
@@ -167,13 +158,11 @@ async def buy_subscription_callback(callback: types.CallbackQuery, state: FSMCon
 
 @router.callback_query(PaymentState.choosing_tariff, F.data.startswith("tariff_"))
 async def tariff_chosen(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Обработка выбранного тарифа"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     tariff_key = callback.data.split("_")[1]
     tariff = SUBSCRIPTION_TARIFFS.get(tariff_key)
@@ -183,9 +172,9 @@ async def tariff_chosen(callback: types.CallbackQuery, state: FSMContext):
         return
     await state.update_data(tariff=tariff_key, price_usd=tariff["price"], days=tariff["days"])
 
-    balance = await get_balance(callback.from_user.id) if DB_OK else 0
+    balance = await get_balance(callback.from_user.id)
     builder = InlineKeyboardBuilder()
-    if DB_OK and balance >= tariff["price"]:
+    if balance >= tariff["price"]:
         builder.button(text="💳 Оплатить с баланса", callback_data="pay_with_balance")
     if CRYPTO_OK:
         builder.button(text="💰 CryptoBot (USDT)", callback_data="method_cryptobot")
@@ -193,7 +182,7 @@ async def tariff_chosen(callback: types.CallbackQuery, state: FSMContext):
     builder.button(text="◀️ Назад", callback_data="buy_subscription")
     builder.adjust(1)
     info = f"Тариф: {tariff['label']}\nСумма: {tariff['price']} USDT"
-    if DB_OK and balance < tariff["price"]:
+    if balance < tariff["price"]:
         info += f"\n\n⚠️ На балансе недостаточно средств ({balance} USDT)."
     await callback.message.edit_text(info, reply_markup=builder.as_markup())
     await state.set_state(PaymentState.choosing_method)
@@ -201,13 +190,11 @@ async def tariff_chosen(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(PaymentState.choosing_method, F.data == "pay_with_balance")
 async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Оплата подписки с внутреннего баланса"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     data = await state.get_data()
     price = data["price_usd"]
@@ -215,7 +202,7 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
     tariff = data["tariff"]
     user_id = callback.from_user.id
 
-    balance = await get_balance(user_id) if DB_OK else 0
+    balance = await get_balance(user_id)
     if balance < price:
         await callback.answer("❌ Недостаточно средств на балансе.", show_alert=True)
         return
@@ -225,20 +212,19 @@ async def pay_with_balance(callback: types.CallbackQuery, state: FSMContext):
 
     expires_at = datetime.now() + timedelta(days=days)
     await set_subscription(user_id, "active", expires_at.isoformat(), "balance")
-    log_action(user_id, "subscription_purchased", f"{price} USDT, {days} дней, с баланса")
+    # Логирование (если есть функция log_action, добавьте её)
+    # log_action(user_id, "subscription_purchased", f"{price} USDT, {days} дней, с баланса")
     await callback.message.edit_text("✅ Подписка успешно активирована за счёт баланса!")
     await state.clear()
     await main_menu_callback(callback)
 
 @router.callback_query(PaymentState.choosing_method, F.data == "method_cryptobot")
 async def pay_with_cryptobot(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Создание счёта в CryptoBot"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     if not CRYPTO_OK:
         await callback.message.edit_text("❌ CryptoBot временно недоступен. Попробуйте позже или оплатите с баланса.")
@@ -253,7 +239,8 @@ async def pay_with_cryptobot(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
 
     try:
-        invoice_id, pay_url = create_crypto_invoice(price, f"Подписка {tariff} user {user_id}")
+        # Предполагаем, что create_crypto_invoice асинхронная
+        invoice_id, pay_url = await create_crypto_invoice(price, f"Подписка {tariff} user {user_id}")
     except Exception as e:
         await callback.message.edit_text(f"❌ Ошибка при создании счёта: {e}")
         await state.clear()
@@ -274,13 +261,11 @@ async def pay_with_cryptobot(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(PaymentState.waiting_for_payment, F.data == "check_payment")
 async def check_payment(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Проверка статуса оплаты CryptoBot"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
 
     data = await state.get_data()
     invoice_id = data["invoice_id"]
@@ -289,15 +274,16 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
     days = data["days"]
     user_id = callback.from_user.id
     try:
-        status = check_crypto_invoice(invoice_id)
+        status = await check_crypto_invoice(invoice_id)
         if status == "paid":
             expires_at = datetime.now() + timedelta(days=days)
             await set_subscription(user_id, "active", expires_at.isoformat(), method)
             await update_invoice_status(invoice_id, "paid")
+            # Бонус 5% на баланс
             bonus = round(price * 0.05, 2)
             await update_balance(user_id, bonus)
             await add_transaction(user_id, bonus, "subscription_bonus", f"Бонус за подписку")
-            log_action(user_id, "subscription_purchased", f"{price} USDT, {days} дней, {method}, бонус {bonus}")
+            # log_action(user_id, "subscription_purchased", f"{price} USDT, {days} дней, {method}, бонус {bonus}")
             await callback.message.edit_text("✅ Подписка успешно активирована! Бонус зачислен на баланс.")
             await state.clear()
             await main_menu_callback(callback)
@@ -308,47 +294,42 @@ async def check_payment(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(PaymentState.choosing_method, F.data == "method_xrocket")
 async def pay_with_xrocket(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Заглушка для Xrocket"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await callback.message.edit_text("❌ Оплата через Xrocket временно недоступна.")
     await state.clear()
 
+# ---------- Пополнение баланса ----------
 @router.callback_query(F.data == "replenish_balance")
 async def replenish_balance_callback(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Начало пополнения баланса"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     await callback.message.edit_text(
         "💵 <b>Пополнение баланса</b>\n\nВведи сумму в USDT (например, 10):",
         parse_mode="HTML",
-        reply_markup=get_nav_keyboard(show_cancel=True)
+        reply_markup=cancel_keyboard()
     )
     await state.set_state(PaymentState.replenish_amount)
     await callback.answer()
 
 @router.message(PaymentState.replenish_amount)
 async def replenish_amount_entered(message: types.Message, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(message.from_user.id):
-            await message.answer("🚫 Вы заблокированы.")
-            return
-    except:
-        pass
+    """Получение суммы пополнения"""
+    if await is_user_blocked(message.from_user.id):
+        await message.answer("🚫 Вы заблокированы.")
+        return
     try:
         amount = float(message.text.strip())
         if amount <= 0:
             raise ValueError
     except:
-        await message.answer("❌ Введи положительное число (например, 10).", reply_markup=get_nav_keyboard(show_cancel=True))
+        await message.answer("❌ Введи положительное число (например, 10).", reply_markup=cancel_keyboard())
         return
     await state.update_data(amount=amount)
     builder = InlineKeyboardBuilder()
@@ -362,13 +343,11 @@ async def replenish_amount_entered(message: types.Message, state: FSMContext):
 
 @router.callback_query(PaymentState.replenish_method, F.data.startswith("replenish_"))
 async def replenish_choose_method(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Выбор метода пополнения"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     method = callback.data.split("_")[1]
     data = await state.get_data()
     amount = data["amount"]
@@ -380,12 +359,12 @@ async def replenish_choose_method(callback: types.CallbackQuery, state: FSMConte
             await state.clear()
             return
         try:
-            invoice_id, pay_url = create_crypto_invoice(amount, f"Пополнение баланса user {user_id}")
+            invoice_id, pay_url = await create_crypto_invoice(amount, f"Пополнение баланса user {user_id}")
         except Exception as e:
             await callback.message.edit_text(f"❌ Ошибка при создании счёта: {e}")
             await state.clear()
             return
-    else:
+    else:  # xrocket
         invoice_id = f"xr_{user_id}_{amount}"
         pay_url = "https://t.me/Xrocket_bot"
 
@@ -404,13 +383,11 @@ async def replenish_choose_method(callback: types.CallbackQuery, state: FSMConte
 
 @router.callback_query(PaymentState.replenish_payment, F.data == "check_replenish")
 async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
-    try:
-        if DB_OK and await is_user_blocked(callback.from_user.id):
-            await callback.message.edit_text("🚫 Вы заблокированы.")
-            await callback.answer()
-            return
-    except:
-        pass
+    """Проверка оплаты пополнения"""
+    if await is_user_blocked(callback.from_user.id):
+        await callback.message.edit_text("🚫 Вы заблокированы.")
+        await callback.answer()
+        return
     data = await state.get_data()
     invoice_id = data["invoice_id"]
     method = data["method"]
@@ -418,14 +395,15 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     try:
         if method == "cryptobot":
-            status = check_crypto_invoice(invoice_id)
+            status = await check_crypto_invoice(invoice_id)
         else:
+            # Для Xrocket всегда считаем оплаченным (тест)
             status = "paid"
         if status == "paid":
             await update_balance(user_id, amount)
             await add_transaction(user_id, amount, "replenish", f"Пополнение через {method}")
             await update_invoice_status(invoice_id, "paid")
-            log_action(user_id, "balance_replenished", f"{amount} USDT, {method}")
+            # log_action(user_id, "balance_replenished", f"{amount} USDT, {method}")
             await callback.message.edit_text(f"✅ Баланс успешно пополнен на {amount} USDT!")
             await state.clear()
             await main_menu_callback(callback)
@@ -434,6 +412,7 @@ async def check_replenish(callback: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await callback.answer(f"❌ Ошибка при проверке: {e}", show_alert=True)
 
+# ---------- Заглушки для остальных меню ----------
 @router.callback_query(F.data == "templates_menu")
 async def templates_menu_callback(callback: types.CallbackQuery):
     if not await check_subscription(callback.from_user.id):

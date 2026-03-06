@@ -3,20 +3,23 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
-from config import ADMIN_IDS
-from database import (
-    get_accounts, get_campaigns, get_users_count,
-    get_active_subscriptions_count, get_expired_subscriptions_count,
-    get_inactive_users_count, block_user, unblock_user, get_user,
-    set_subscription, get_all_users, get_landings_count,
-    get_campaigns_count, get_templates_count
-)
-from handlers.common import get_nav_keyboard
 import asyncio
 import os
 
+from config import ADMIN_IDS
+from database import (
+    get_users_count, get_active_subscriptions_count, get_expired_subscriptions_count,
+    get_inactive_users_count, get_all_users, block_user, unblock_user, get_user,
+    set_subscription, get_campaigns_count, get_templates_count, get_landings_count,
+    get_accounts, get_replenishments_stats, get_subscription_purchases_stats,
+    get_active_subscriptions_list
+)
+from handlers.common import cancel_keyboard  # импортируем из keyboards.py (должен быть там)
+from keyboards import back_to_menu_keyboard
+
 router = Router()
 
+# ---------- Состояния FSM ----------
 class BlockUserState(StatesGroup):
     waiting_for_user_id = State()
 
@@ -27,57 +30,73 @@ class GiveSubscriptionState(StatesGroup):
 class BroadcastState(StatesGroup):
     waiting_for_message = State()
 
+# ---------- Проверка админа ----------
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
+# ---------- Главная админ-панель ----------
 @router.message(F.text == "/admin")
 async def admin_panel(message: types.Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.")
         return
+
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Общая статистика", callback_data="admin_stats")
-    builder.button(text="📋 Аккаунты", callback_data="admin_accounts")
-    builder.button(text="📦 Контент", callback_data="admin_content")
+    builder.button(text="📋 Аккаунты (все)", callback_data="admin_accounts")
+    builder.button(text="📦 Контент (лендинги/шаблоны)", callback_data="admin_content")
     builder.button(text="👥 Пользователи", callback_data="admin_users_stats")
+    builder.button(text="💰 Финансы", callback_data="admin_finance")
     builder.button(text="🚫 Блокировка", callback_data="admin_block_user")
     builder.button(text="🎁 Выдать подписку", callback_data="admin_give_subscription")
     builder.button(text="📢 Рассылка", callback_data="admin_broadcast")
     builder.button(text="📝 Логи", callback_data="admin_logs")
     builder.button(text="🗑 Очистить логи", callback_data="admin_clear_logs")
     builder.adjust(2, 2, 2, 3)
-    await message.answer("🔐 Админ-панель", reply_markup=builder.as_markup())
+    await message.answer("🔐 **Админ-панель**", parse_mode="HTML", reply_markup=builder.as_markup())
 
+# ---------- Общая статистика ----------
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("Нет доступа", show_alert=True)
         return
-    campaigns = await get_campaigns()
-    total = len(campaigns)
-    text = f"📊 Статистика кампаний:\nВсего кампаний: {total}\n"
-    if total > 0:
-        text += f"Последняя: {campaigns[0]['created_at']}"
-    else:
-        text += "Кампаний пока нет."
+
+    campaigns = await get_campaigns_count()
+    templates = await get_templates_count()
+    landings = await get_landings_count()
+    accounts = len(await get_accounts())
+
+    text = (
+        f"📊 **Общая статистика**\n\n"
+        f"📋 Всего аккаунтов: {accounts}\n"
+        f"📝 Шаблонов: {templates}\n"
+        f"🚀 Кампаний: {campaigns}\n"
+        f"🌐 Лендингов: {landings}"
+    )
     builder = InlineKeyboardBuilder()
     builder.button(text="◀️ Назад", callback_data="admin_back")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()
 
+# ---------- Список всех аккаунтов (глобально) ----------
 @router.callback_query(F.data == "admin_accounts")
 async def admin_accounts(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
     accounts = await get_accounts()
-    text = "📋 Аккаунты:\n"
-    for acc in accounts:
-        text += f"ID {acc['id']}: {acc['platform']} - {acc['status']}\n"
+    text = "📋 **Все аккаунты в системе**\n\n"
+    if not accounts:
+        text += "Аккаунтов нет."
+    else:
+        for acc in accounts:
+            text += f"ID {acc['id']}: {acc['platform']} (владелец {acc['user_id']}) – {acc['status']}\n"
     builder = InlineKeyboardBuilder()
     builder.button(text="◀️ Назад", callback_data="admin_back")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()
 
+# ---------- Контент (лендинги, шаблоны) ----------
 @router.callback_query(F.data == "admin_content")
 async def admin_content(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -86,7 +105,7 @@ async def admin_content(callback: types.CallbackQuery):
     campaigns = await get_campaigns_count()
     templates = await get_templates_count()
     text = (
-        f"📦 <b>Контент</b>\n\n"
+        f"📦 **Контент**\n\n"
         f"🌐 Лендингов создано: {landings}\n"
         f"🚀 Кампаний запущено: {campaigns}\n"
         f"📝 Шаблонов создано: {templates}"
@@ -96,6 +115,7 @@ async def admin_content(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()
 
+# ---------- Статистика пользователей ----------
 @router.callback_query(F.data == "admin_users_stats")
 async def admin_users_stats(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -105,7 +125,7 @@ async def admin_users_stats(callback: types.CallbackQuery):
     expired_subs = await get_expired_subscriptions_count()
     inactive = await get_inactive_users_count()
     text = (
-        f"👥 <b>Статистика пользователей</b>\n\n"
+        f"👥 **Статистика пользователей**\n\n"
         f"👤 Всего пользователей: {total}\n"
         f"✅ Активных подписок: {active_subs}\n"
         f"⏳ Просроченных подписок: {expired_subs}\n"
@@ -122,12 +142,11 @@ async def admin_users_stats(callback: types.CallbackQuery):
 async def admin_active_subs(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
-    from database import get_active_subscriptions_list
     subs = await get_active_subscriptions_list()
     if not subs:
         text = "📋 Нет активных подписок."
     else:
-        text = "📋 <b>Активные подписки</b>\n\n"
+        text = "📋 **Активные подписки**\n\n"
         for sub in subs:
             user = await get_user(sub["user_id"])
             username = user["username"] if user and user["username"] else "нет"
@@ -137,14 +156,31 @@ async def admin_active_subs(callback: types.CallbackQuery):
     await callback.message.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()
 
-# ----- Блокировка -----
+# ---------- Финансовая статистика ----------
+@router.callback_query(F.data == "admin_finance")
+async def admin_finance(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+    repl = await get_replenishments_stats()
+    subs = await get_subscription_purchases_stats()
+    text = (
+        f"💰 **Финансовая статистика**\n\n"
+        f"💳 Пополнений: {repl['count']} на сумму {repl['total']:.2f} USDT\n"
+        f"🎫 Покупок подписок: {subs['count']} на сумму {subs['total']:.2f} USDT"
+    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="◀️ Назад", callback_data="admin_back")
+    await callback.message.edit_text(text, parse_mode="HTML", reply_markup=builder.as_markup())
+    await callback.answer()
+
+# ---------- Блокировка пользователя ----------
 @router.callback_query(F.data == "admin_block_user")
 async def admin_block_user(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         return
     await callback.message.edit_text(
         "🚫 Введи Telegram ID пользователя, которого нужно заблокировать/разблокировать:",
-        reply_markup=InlineKeyboardBuilder().button(text="◀️ Назад", callback_data="admin_back").as_markup()
+        reply_markup=cancel_keyboard()
     )
     await state.set_state(BlockUserState.waiting_for_user_id)
     await callback.answer()
@@ -154,7 +190,7 @@ async def block_user_id_received(message: types.Message, state: FSMContext):
     try:
         user_id = int(message.text.strip())
     except:
-        await message.answer("❌ Неверный ID. Введи число.")
+        await message.answer("❌ Неверный ID. Введи число.", reply_markup=cancel_keyboard())
         return
     user = await get_user(user_id)
     if not user:
@@ -190,7 +226,7 @@ async def process_unblock(callback: types.CallbackQuery):
     await callback.message.edit_text(f"✅ Пользователь {user_id} разблокирован.")
     await callback.answer()
 
-# ----- Выдача подписки -----
+# ---------- Выдача подписки ----------
 @router.callback_query(F.data == "admin_give_subscription")
 async def admin_give_subscription_start(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -198,7 +234,7 @@ async def admin_give_subscription_start(callback: types.CallbackQuery, state: FS
         return
     await callback.message.edit_text(
         "🔹 Введите Telegram ID пользователя, которому хотите выдать подписку:",
-        reply_markup=InlineKeyboardBuilder().button(text="◀️ Назад", callback_data="admin_back").as_markup()
+        reply_markup=cancel_keyboard()
     )
     await state.set_state(GiveSubscriptionState.waiting_for_user_id)
     await callback.answer()
@@ -208,7 +244,7 @@ async def admin_give_subscription_user_id(message: types.Message, state: FSMCont
     try:
         user_id = int(message.text.strip())
     except:
-        await message.answer("❌ Неверный ID. Введите число.")
+        await message.answer("❌ Неверный ID. Введите число.", reply_markup=cancel_keyboard())
         return
     user = await get_user(user_id)
     if not user:
@@ -218,7 +254,7 @@ async def admin_give_subscription_user_id(message: types.Message, state: FSMCont
     await state.update_data(target_user_id=user_id)
     await message.answer(
         "🔹 Введите количество дней подписки (целое число):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
+        reply_markup=cancel_keyboard()
     )
     await state.set_state(GiveSubscriptionState.waiting_for_days)
 
@@ -229,7 +265,7 @@ async def admin_give_subscription_days(message: types.Message, state: FSMContext
         if days <= 0:
             raise ValueError
     except:
-        await message.answer("❌ Введите положительное целое число.")
+        await message.answer("❌ Введите положительное целое число.", reply_markup=cancel_keyboard())
         return
     data = await state.get_data()
     user_id = data['target_user_id']
@@ -237,9 +273,9 @@ async def admin_give_subscription_days(message: types.Message, state: FSMContext
     await set_subscription(user_id, "active", expires_at.isoformat(), "admin_grant")
     await message.answer(f"✅ Подписка на {days} дней выдана пользователю {user_id}.")
     await state.clear()
-    await admin_panel(message)
+    await admin_panel(message)  # возврат в админку
 
-# ----- Рассылка -----
+# ---------- Рассылка всем пользователям ----------
 @router.callback_query(F.data == "admin_broadcast")
 async def admin_broadcast_start(callback: types.CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
@@ -247,7 +283,7 @@ async def admin_broadcast_start(callback: types.CallbackQuery, state: FSMContext
         return
     await callback.message.edit_text(
         "📢 Введите сообщение для рассылки всем пользователям (можно использовать HTML-разметку):",
-        reply_markup=InlineKeyboardBuilder().button(text="◀️ Назад", callback_data="admin_back").as_markup()
+        reply_markup=cancel_keyboard()
     )
     await state.set_state(BroadcastState.waiting_for_message)
     await callback.answer()
@@ -263,7 +299,7 @@ async def admin_broadcast_message(message: types.Message, state: FSMContext):
         await message.answer("❌ Нет пользователей в базе.")
         await state.clear()
         return
-    await message.answer(f"✅ Начинаю рассылку {len(users)} пользователям...")
+    await message.answer(f"⏳ Начинаю рассылку {len(users)} пользователям...")
     sent = 0
     failed = 0
     for user in users:
@@ -273,12 +309,12 @@ async def admin_broadcast_message(message: types.Message, state: FSMContext):
         except Exception as e:
             print(f"Не удалось отправить {user['user_id']}: {e}")
             failed += 1
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)  # антиспам-пауза
     await message.answer(f"✅ Рассылка завершена. Отправлено: {sent}, ошибок: {failed}.")
     await state.clear()
     await admin_panel(message)
 
-# ----- Логи -----
+# ---------- Логи ----------
 @router.callback_query(F.data == "admin_logs")
 async def admin_logs(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
@@ -286,12 +322,12 @@ async def admin_logs(callback: types.CallbackQuery):
     try:
         with open('user_actions.log', 'r', encoding='utf-8') as f:
             lines = f.readlines()[-20:]
-        log_text = "📝 Последние логи:\n" + "".join(lines)
+        log_text = "📝 **Последние логи:**\n" + "".join(lines)
     except FileNotFoundError:
         log_text = "Лог-файл не найден."
     builder = InlineKeyboardBuilder()
     builder.button(text="◀️ Назад", callback_data="admin_back")
-    await callback.message.edit_text(log_text[:3000], reply_markup=builder.as_markup())
+    await callback.message.edit_text(log_text[:3000], parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()
 
 @router.callback_query(F.data == "admin_clear_logs")
@@ -305,18 +341,20 @@ async def admin_clear_logs(callback: types.CallbackQuery):
         await callback.message.edit_text(f"❌ Ошибка: {e}")
     await callback.answer()
 
+# ---------- Возврат в главное меню админки ----------
 @router.callback_query(F.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     builder.button(text="📊 Общая статистика", callback_data="admin_stats")
-    builder.button(text="📋 Аккаунты", callback_data="admin_accounts")
-    builder.button(text="📦 Контент", callback_data="admin_content")
+    builder.button(text="📋 Аккаунты (все)", callback_data="admin_accounts")
+    builder.button(text="📦 Контент (лендинги/шаблоны)", callback_data="admin_content")
     builder.button(text="👥 Пользователи", callback_data="admin_users_stats")
+    builder.button(text="💰 Финансы", callback_data="admin_finance")
     builder.button(text="🚫 Блокировка", callback_data="admin_block_user")
     builder.button(text="🎁 Выдать подписку", callback_data="admin_give_subscription")
     builder.button(text="📢 Рассылка", callback_data="admin_broadcast")
     builder.button(text="📝 Логи", callback_data="admin_logs")
     builder.button(text="🗑 Очистить логи", callback_data="admin_clear_logs")
     builder.adjust(2, 2, 2, 3)
-    await callback.message.edit_text("🔐 Админ-панель", reply_markup=builder.as_markup())
+    await callback.message.edit_text("🔐 **Админ-панель**", parse_mode="HTML", reply_markup=builder.as_markup())
     await callback.answer()

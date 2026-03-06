@@ -1,102 +1,72 @@
-from aiogram import Router, types, F
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from database import add_template, get_templates, get_template, is_user_blocked
-from handlers.common import get_nav_keyboard
-from logger import log_action
+from aiogram.filters import StateFilter
+from database import add_template, get_templates, get_template
+from keyboards import back_to_menu_keyboard, cancel_keyboard
 
 router = Router()
 
-class TemplateState(StatesGroup):
-    name = State()
-    platform = State()
-    text = State()
-    media = State()  # пока не используется
+class TemplateStates(StatesGroup):
+    waiting_name = State()
+    waiting_platform = State()
+    waiting_content = State()
 
 @router.callback_query(F.data == "templates_menu")
-async def templates_menu_callback(callback: types.CallbackQuery):
-    if await is_user_blocked(callback.from_user.id):
-        await callback.message.edit_text("🚫 Вы заблокированы.")
-        await callback.answer()
-        return
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📄 Создать шаблон", callback_data="create_template")
-    builder.button(text="📋 Мои шаблоны", callback_data="list_templates")
-    builder.button(text="◀️ Назад", callback_data="main_menu")
-    await callback.message.edit_text(
-        "📝 Управление шаблонами:",
-        reply_markup=builder.as_markup()
-    )
+async def templates_menu(callback: CallbackQuery):
+    templates = await get_templates(user_id=callback.from_user.id)
+    text = "📋 **Ваши шаблоны**\n\n"
+    if not templates:
+        text += "У вас пока нет шаблонов."
+    else:
+        for t in templates:
+            text += f"• {t['name']} ({t['platform']})\n"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Создать шаблон", callback_data="create_template")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="main_menu")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 @router.callback_query(F.data == "create_template")
-async def create_template_start(callback: types.CallbackQuery, state: FSMContext):
+async def create_template_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "Введи название шаблона:",
-        reply_markup=get_nav_keyboard(show_cancel=True)
+        "✏️ Введите название шаблона:",
+        reply_markup=cancel_keyboard()
     )
-    await state.set_state(TemplateState.name)
-
-@router.message(TemplateState.name)
-async def template_name(message: types.Message, state: FSMContext):
-    name = message.text.strip()
-    if not name:
-        await message.answer("❌ Название не может быть пустым.")
-        return
-    await state.update_data(name=name)
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📱 MAX", callback_data="tpl_platform_max")
-    builder.button(text="✈️ Telegram", callback_data="tpl_platform_telegram")
-    builder.button(text="📘 VK", callback_data="tpl_platform_vk")
-    builder.button(text="🚫 Отмена", callback_data="cancel")
-    builder.adjust(2)
-    await message.answer("Выбери платформу:", reply_markup=builder.as_markup())
-    await state.set_state(TemplateState.platform)
-
-@router.callback_query(F.data.startswith("tpl_platform_"), TemplateState.platform)
-async def template_platform(callback: types.CallbackQuery, state: FSMContext):
-    platform = callback.data.replace("tpl_platform_", "")
-    await state.update_data(platform=platform)
-    await callback.message.edit_text(
-        "Введи текст сообщения (можно использовать эмодзи):",
-        reply_markup=get_nav_keyboard(show_cancel=True)
-    )
-    await state.set_state(TemplateState.text)
-
-@router.message(TemplateState.text)
-async def template_text(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    if not text:
-        await message.answer("❌ Текст не может быть пустым.")
-        return
-    await state.update_data(text=text)
-    data = await state.get_data()
-    await add_template(message.from_user.id, data["name"], data["platform"], text)
-    log_action(message.from_user.id, "create_template", data["name"])
-    await message.answer("✅ Шаблон создан!")
-    await state.clear()
-    from handlers.start import cmd_start
-    await cmd_start(message)
-
-@router.callback_query(F.data == "list_templates")
-async def list_templates(callback: types.CallbackQuery):
-    if await is_user_blocked(callback.from_user.id):
-        await callback.message.edit_text("🚫 Вы заблокированы.")
-        await callback.answer()
-        return
-    templates = await get_templates(user_id=callback.from_user.id)
-    if not templates:
-        await callback.message.edit_text(
-            "📋 У вас пока нет сохранённых шаблонов.",
-            reply_markup=InlineKeyboardBuilder().button(text="◀️ Назад", callback_data="templates_menu").as_markup()
-        )
-        await callback.answer()
-        return
-    text = "📋 Ваши шаблоны:\n\n"
-    for tpl in templates:
-        text += f"🆔 {tpl['id']}: {tpl['name']} ({tpl['platform']})\n{tpl['text'][:50]}...\n\n"
-    builder = InlineKeyboardBuilder()
-    builder.button(text="◀️ Назад", callback_data="templates_menu")
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await state.set_state(TemplateStates.waiting_name)
     await callback.answer()
+
+@router.message(StateFilter(TemplateStates.waiting_name))
+async def process_template_name(message: Message, state: FSMContext):
+    name = message.text.strip()
+    await state.update_data(name=name)
+    await message.answer(
+        "📱 Выберите платформу:\ntelegram / vk",
+        reply_markup=cancel_keyboard()
+    )
+    await state.set_state(TemplateStates.waiting_platform)
+
+@router.message(StateFilter(TemplateStates.waiting_platform))
+async def process_template_platform(message: Message, state: FSMContext):
+    platform = message.text.strip().lower()
+    if platform not in ('telegram', 'vk'):
+        await message.answer("❌ Платформа должна быть 'telegram' или 'vk'. Попробуйте снова.")
+        return
+    await state.update_data(platform=platform)
+    await message.answer(
+        "📝 Введите текст шаблона (можно с эмодзи и Markdown):",
+        reply_markup=cancel_keyboard()
+    )
+    await state.set_state(TemplateStates.waiting_content)
+
+@router.message(StateFilter(TemplateStates.waiting_content))
+async def process_template_content(message: Message, state: FSMContext):
+    data = await state.get_data()
+    name = data['name']
+    platform = data['platform']
+    content = message.text
+    await add_template(message.from_user.id, name, platform, content)
+    await message.answer(f"✅ Шаблон '{name}' сохранён!", reply_markup=back_to_menu_keyboard())
+    await state.clear()
